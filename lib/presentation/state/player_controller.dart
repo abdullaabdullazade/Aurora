@@ -1,7 +1,11 @@
-import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../../domain/entities/track.dart';
+import 'providers.dart';
 
 enum LoopMode { off, one, all }
 
@@ -10,7 +14,9 @@ class PlayerState {
   final List<Track> queue;
   final int index;
   final bool isPlaying;
+  final bool isLoading;
   final Duration position;
+  final Duration duration; // real stream duration once known
   final bool shuffle;
   final LoopMode repeat;
 
@@ -18,7 +24,9 @@ class PlayerState {
     this.queue = const [],
     this.index = 0,
     this.isPlaying = false,
+    this.isLoading = false,
     this.position = Duration.zero,
+    this.duration = Duration.zero,
     this.shuffle = false,
     this.repeat = LoopMode.off,
   });
@@ -29,7 +37,10 @@ class PlayerState {
           : null;
 
   bool get hasTrack => current != null;
-  Duration get total => current?.duration ?? Duration.zero;
+
+  Duration get total =>
+      duration > Duration.zero ? duration : (current?.duration ?? Duration.zero);
+
   double get progress => total.inMilliseconds == 0
       ? 0
       : (position.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
@@ -38,7 +49,9 @@ class PlayerState {
     List<Track>? queue,
     int? index,
     bool? isPlaying,
+    bool? isLoading,
     Duration? position,
+    Duration? duration,
     bool? shuffle,
     LoopMode? repeat,
   }) =>
@@ -46,73 +59,91 @@ class PlayerState {
         queue: queue ?? this.queue,
         index: index ?? this.index,
         isPlaying: isPlaying ?? this.isPlaying,
+        isLoading: isLoading ?? this.isLoading,
         position: position ?? this.position,
+        duration: duration ?? this.duration,
         shuffle: shuffle ?? this.shuffle,
         repeat: repeat ?? this.repeat,
       );
 }
 
-/// Drives playback state. Here it simulates a ticking position so the UI is
-/// fully alive in preview. In production, replace [_tick] wiring with
-/// just_audio's positionStream and forward transport calls to AudioHandler.
+/// Real playback engine on top of just_audio. Resolves a YouTube audio stream
+/// per track on demand, extracts a palette color for the ambient UI, and
+/// records recents to the local store.
 class PlayerController extends Notifier<PlayerState> {
-  Timer? _ticker;
+  late final AudioPlayer _player;
+  int _loadToken = 0; // guards against out-of-order async loads
 
   @override
   PlayerState build() {
-    ref.onDispose(() => _ticker?.cancel());
+    _player = AudioPlayer();
+    _wireStreams();
+    ref.onDispose(_player.dispose);
     return const PlayerState();
   }
 
-  void playQueue(List<Track> tracks, {int startAt = 0}) {
+  void _wireStreams() {
+    _player.positionStream.listen((p) {
+      if (!state.isLoading) state = state.copyWith(position: p);
+    });
+    _player.durationStream.listen((d) {
+      if (d != null) state = state.copyWith(duration: d);
+    });
+    _player.playerStateStream.listen((ps) {
+      state = state.copyWith(isPlaying: ps.playing);
+      if (ps.processingState == ProcessingState.completed) _onComplete();
+    });
+  }
+
+  Future<void> playQueue(List<Track> tracks, {int startAt = 0}) async {
     state = state.copyWith(
       queue: tracks,
       index: startAt,
       position: Duration.zero,
-      isPlaying: true,
+      duration: Duration.zero,
     );
-    _restartTicker();
+    await _loadCurrent(autoplay: true);
   }
 
   void playSingle(Track track) => playQueue([track]);
 
-  void toggle() {
-    state = state.copyWith(isPlaying: !state.isPlaying);
-    state.isPlaying ? _restartTicker() : _ticker?.cancel();
+  Future<void> toggle() async {
+    if (_player.playing) {
+      await _player.pause();
+    } else {
+      await _player.play();
+    }
   }
 
-  void next() {
+  Future<void> next() async {
     if (state.queue.isEmpty) return;
     final last = state.index >= state.queue.length - 1;
-    if (last && state.repeat == LoopMode.off) {
-      _seekTo(state.total);
-      return;
-    }
+    if (last && state.repeat == LoopMode.off) return;
     final nextIndex = last ? 0 : state.index + 1;
     state = state.copyWith(
-        index: nextIndex, position: Duration.zero, isPlaying: true);
-    _restartTicker();
+        index: nextIndex, position: Duration.zero, duration: Duration.zero);
+    await _loadCurrent(autoplay: true);
   }
 
-  void previous() {
+  Future<void> previous() async {
     if (state.position.inSeconds > 3 || state.index == 0) {
-      _seekTo(Duration.zero);
+      await _player.seek(Duration.zero);
       return;
     }
     state = state.copyWith(
-        index: state.index - 1, position: Duration.zero, isPlaying: true);
-    _restartTicker();
+        index: state.index - 1, position: Duration.zero, duration: Duration.zero);
+    await _loadCurrent(autoplay: true);
   }
 
-  void seek(double fraction) =>
-      _seekTo(state.total * fraction.clamp(0.0, 1.0));
+  Future<void> seek(double fraction) =>
+      _player.seek(state.total * fraction.clamp(0.0, 1.0));
 
   void toggleShuffle() => state = state.copyWith(shuffle: !state.shuffle);
 
   void cycleRepeat() {
     const order = LoopMode.values;
-    state = state.copyWith(
-        repeat: order[(state.repeat.index + 1) % order.length]);
+    state =
+        state.copyWith(repeat: order[(state.repeat.index + 1) % order.length]);
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
@@ -132,24 +163,55 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   // --- internal ----------------------------------------------------------
-  void _seekTo(Duration p) =>
-      state = state.copyWith(position: p > state.total ? state.total : p);
+  void _onComplete() {
+    if (state.repeat == LoopMode.one) {
+      _player.seek(Duration.zero);
+      _player.play();
+    } else {
+      next();
+    }
+  }
 
-  void _restartTicker() {
-    _ticker?.cancel();
-    if (!state.isPlaying) return;
-    _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      final next = state.position + const Duration(milliseconds: 250);
-      if (next >= state.total) {
-        if (state.repeat == LoopMode.one) {
-          _seekTo(Duration.zero);
-        } else {
-          this.next();
-        }
-        return;
+  Future<void> _loadCurrent({bool autoplay = false}) async {
+    final track = state.current;
+    if (track == null) return;
+    final token = ++_loadToken;
+    state = state.copyWith(isLoading: true, position: Duration.zero);
+
+    // Record recent + refresh the Home carousel.
+    await ref.read(localStoreProvider).pushRecent(track);
+    ref.invalidate(recentlyPlayedProvider);
+
+    try {
+      final uri = await ref.read(musicRepositoryProvider).resolveStream(track);
+      if (token != _loadToken) return; // superseded by a newer load
+      await _player.setAudioSource(AudioSource.uri(uri));
+      state = state.copyWith(isLoading: false);
+      if (autoplay) await _player.play();
+      _applyPalette(track, token); // fire-and-forget
+    } catch (_) {
+      if (token == _loadToken) state = state.copyWith(isLoading: false);
+    }
+  }
+
+  /// Extracts a dominant color from the artwork and recolors the active track
+  /// so the ambient background matches it.
+  Future<void> _applyPalette(Track track, int token) async {
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        CachedNetworkImageProvider(track.artworkUrl),
+        size: const Size(120, 120),
+        maximumColorCount: 8,
+      );
+      final Color? c = palette.vibrantColor?.color ??
+          palette.dominantColor?.color;
+      if (c == null || token != _loadToken) return;
+      final list = [...state.queue];
+      if (state.index < list.length) {
+        list[state.index] = list[state.index].copyWith(accent: c);
+        state = state.copyWith(queue: list);
       }
-      _seekTo(next);
-    });
+    } catch (_) {/* keep deterministic accent */}
   }
 }
 

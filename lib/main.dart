@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/db/local_store.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/root_scaffold.dart';
+import 'presentation/state/providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,9 +12,15 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations(
       [DeviceOrientation.portraitUp]);
 
-  // To go live, boot audio_service + Hive here, then override the repository
-  // provider with the real implementation.
-  runApp(const ProviderScope(child: AuroraApp()));
+  final store = LocalStore();
+  await store.init();
+
+  runApp(
+    ProviderScope(
+      overrides: [localStoreProvider.overrideWithValue(store)],
+      child: const AuroraApp(),
+    ),
+  );
 }
 
 class AuroraApp extends StatelessWidget {
