@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../core/utils/formatters.dart';
+import '../../../domain/entities/playlist.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
+import '../../state/playlist_controller.dart';
 import '../../state/providers.dart';
+import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
+import 'playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -37,9 +41,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, Sp.md),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Your Library', style: text.displayLarge),
+            child: Row(
+              children: [
+                Text('Your Library', style: text.displayLarge),
+                const Spacer(),
+                _NewPlaylistButton(
+                    onCreated: (id) => _open(context, id)),
+              ],
             ),
           ),
           TabBar(
@@ -51,9 +59,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             labelColor: AppColors.accentBright,
             unselectedLabelColor: AppColors.textSecondary,
             labelStyle: text.titleMedium,
+            dividerColor: Colors.transparent,
             tabs: const [
-              Tab(text: 'Downloaded'),
               Tab(text: 'Playlists'),
+              Tab(text: 'Downloaded'),
               Tab(text: 'Queue'),
             ],
           ),
@@ -61,17 +70,180 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             child: TabBarView(
               controller: _tabs,
               children: [
+                _PlaylistsTab(onOpen: (id) => _open(context, id)),
                 _DownloadedTab(
                   data: downloads,
                   filter: _filter,
                   onFilter: (v) => setState(() => _filter = v),
                 ),
-                const _PlaylistsTab(),
                 const _DownloadingTab(),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _open(BuildContext context, String id) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlaylistDetailScreen(playlistId: id),
+    ));
+  }
+}
+
+class _NewPlaylistButton extends ConsumerWidget {
+  final ValueChanged<String> onCreated;
+  const _NewPlaylistButton({required this.onCreated});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      icon: const Icon(Icons.add_circle_outline_rounded,
+          color: AppColors.textPrimary, size: 28),
+      onPressed: () async {
+        final name = await _askName(context);
+        if (name == null || name.trim().isEmpty) return;
+        final p = await ref.read(playlistsProvider.notifier).create(name);
+        onCreated(p.id);
+      },
+    );
+  }
+
+  Future<String?> _askName(BuildContext context) => showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          final ctrl = TextEditingController();
+          return AlertDialog(
+            backgroundColor: AppColors.elevated,
+            shape: const RoundedRectangleBorder(borderRadius: Radii.rLg),
+            title: const Text('New playlist'),
+            content: TextField(
+              controller: ctrl,
+              autofocus: true,
+              cursorColor: AppColors.accentBright,
+              decoration: const InputDecoration(hintText: 'Playlist name'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
+              FilledButton(
+                style:
+                    FilledButton.styleFrom(backgroundColor: AppColors.accent),
+                onPressed: () => Navigator.pop(ctx, ctrl.text),
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
+      );
+}
+
+class _PlaylistsTab extends ConsumerWidget {
+  final ValueChanged<String> onOpen;
+  const _PlaylistsTab({required this.onOpen});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playlists = ref.watch(playlistsProvider);
+    final text = Theme.of(context).textTheme;
+
+    if (playlists.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.library_add_rounded,
+                size: 64, color: AppColors.textTertiary),
+            const SizedBox(height: Sp.md),
+            Text('No playlists yet', style: text.titleMedium),
+            const SizedBox(height: Sp.xs),
+            Text('Tap + to create your first one', style: text.bodyMedium),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
+      itemCount: playlists.length,
+      separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
+      itemBuilder: (_, i) => _PlaylistRow(
+        playlist: playlists[i],
+        onTap: () => onOpen(playlists[i].id),
+        onDelete: () =>
+            ref.read(playlistsProvider.notifier).delete(playlists[i].id),
+      ),
+    );
+  }
+}
+
+class _PlaylistRow extends StatelessWidget {
+  final Playlist playlist;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  const _PlaylistRow(
+      {required this.playlist, required this.onTap, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Glass(
+        radius: Radii.rLg,
+        padding: const EdgeInsets.all(Sp.md),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                borderRadius: Radii.rSm,
+                gradient: playlist.tracks.isEmpty
+                    ? AppColors.accentSweep
+                    : null,
+                color: AppColors.elevated,
+              ),
+              child: playlist.tracks.isEmpty
+                  ? const Icon(Icons.queue_music_rounded, color: Colors.black)
+                  : ClipRRect(
+                      borderRadius: Radii.rSm,
+                      child: Artwork(track: playlist.tracks.first, size: 56),
+                    ),
+            ),
+            const SizedBox(width: Sp.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(playlist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.titleMedium),
+                  const SizedBox(height: 2),
+                  Text('${playlist.tracks.length} tracks',
+                      style: text.bodyMedium),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              color: AppColors.elevated,
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: AppColors.textSecondary),
+              onSelected: (v) {
+                if (v == 'delete') onDelete();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -86,9 +258,10 @@ class _DownloadedTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
     return data.when(
-      loading: () =>
-          const Center(child: CircularProgressIndicator(color: AppColors.accent)),
+      loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.accent)),
       error: (_, __) => const Center(child: Text('Error')),
       data: (all) {
         final tracks = filter.isEmpty
@@ -98,6 +271,21 @@ class _DownloadedTab extends ConsumerWidget {
                     t.title.toLowerCase().contains(filter.toLowerCase()) ||
                     t.artist.toLowerCase().contains(filter.toLowerCase()))
                 .toList();
+        if (all.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.download_done_rounded,
+                    size: 64, color: AppColors.textTertiary),
+                const SizedBox(height: Sp.md),
+                Text('No downloads yet', style: text.titleMedium),
+                const SizedBox(height: Sp.xs),
+                Text('Downloaded tracks play offline', style: text.bodyMedium),
+              ],
+            ),
+          );
+        }
         return Column(
           children: [
             Padding(
@@ -107,7 +295,7 @@ class _DownloadedTab extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: Sp.lg),
                 child: TextField(
                   onChanged: onFilter,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                  style: text.bodyLarge,
                   cursorColor: AppColors.accentBright,
                   decoration: const InputDecoration(
                     border: InputBorder.none,
@@ -139,106 +327,24 @@ class _DownloadedTab extends ConsumerWidget {
   }
 }
 
-class _PlaylistsTab extends StatelessWidget {
-  const _PlaylistsTab();
-  @override
-  Widget build(BuildContext context) {
-    final names = ['Liked Songs', 'Focus Flow', 'Late Night', 'Workout'];
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
-      itemCount: names.length,
-      separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
-      itemBuilder: (_, i) => Glass(
-        radius: Radii.rLg,
-        padding: const EdgeInsets.all(Sp.md),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                borderRadius: Radii.rSm,
-                gradient: AppColors.accentSweep,
-              ),
-              child: const Icon(Icons.queue_music_rounded,
-                  color: Colors.black),
-            ),
-            const SizedBox(width: Sp.md),
-            Expanded(
-              child: Text(names[i],
-                  style: Theme.of(context).textTheme.titleMedium),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondary),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Live download queue with progress / speed / ETA piped to the UI.
+/// Live download queue placeholder (real engine wired separately).
 class _DownloadingTab extends StatelessWidget {
   const _DownloadingTab();
   @override
   Widget build(BuildContext context) {
-    final jobs = [
-      ('Midnight Aurora', 'Nova Wren', 0.72, 1.6),
-      ('Neon Tides', 'Kasai', 0.34, 2.1),
-      ('Glass Horizon', 'Aeon', 0.05, 0.9),
-    ];
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
-      itemCount: jobs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
-      itemBuilder: (_, i) {
-        final (title, artist, pct, mbps) = jobs[i];
-        final text = Theme.of(context).textTheme;
-        return Glass(
-          radius: Radii.rLg,
-          padding: const EdgeInsets.all(Sp.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: text.titleMedium),
-                        Text(artist, style: text.bodyMedium),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    pct < 1
-                        ? Icons.pause_circle_rounded
-                        : Icons.check_circle_rounded,
-                    color: AppColors.accentBright,
-                  ),
-                ],
-              ),
-              const SizedBox(height: Sp.md),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: pct,
-                  minHeight: 5,
-                  backgroundColor: AppColors.glassStroke,
-                  valueColor:
-                      const AlwaysStoppedAnimation(AppColors.accentBright),
-                ),
-              ),
-              const SizedBox(height: Sp.sm),
-              Text(
-                '${(pct * 100).round()}%  ·  ${mbps.toStringAsFixed(1)} MB/s  ·  ETA ${Fmt.duration(Duration(seconds: ((1 - pct) * 90).round()))}',
-                style: text.labelSmall,
-              ),
-            ],
-          ),
-        );
-      },
+    final text = Theme.of(context).textTheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_download_outlined,
+              size: 64, color: AppColors.textTertiary),
+          const SizedBox(height: Sp.md),
+          Text('Download queue is empty', style: text.titleMedium),
+          const SizedBox(height: Sp.xs),
+          Text('Active downloads show progress here', style: text.bodyMedium),
+        ],
+      ),
     );
   }
 }
