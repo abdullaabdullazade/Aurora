@@ -28,8 +28,9 @@ dependencies:
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4
 
-  # Downloads
-  flutter_downloader: ^1.11.8
+  # Downloads (permission_handler kept; flutter_downloader added when wiring
+  # the real download engine — it needs manifest + AGP setup, omitted from the
+  # preview build to keep the demo runnable out of the box).
   permission_handler: ^11.3.1
 
   # UI helpers
@@ -37,6 +38,12 @@ dependencies:
   shimmer: ^3.0.0
   animations: ^2.0.11
   google_fonts: ^6.2.1
+
+# path_provider_android >=2.3 pulls `jni`, which forces a native CMake/NDK
+# build (needs extra SDK components). Pin to the last pure-Kotlin release so
+# the app builds with zero native toolchain.
+dependency_overrides:
+  path_provider_android: 2.2.15
 
 dev_dependencies:
   flutter_test:
