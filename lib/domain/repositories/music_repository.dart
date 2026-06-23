@@ -1,0 +1,18 @@
+import '../entities/track.dart';
+
+/// Domain contract. Presentation depends on this abstraction, never on Dio /
+/// youtube_explode directly (Dependency Inversion).
+abstract interface class MusicRepository {
+  /// Online search (YouTube Music style). [filter] e.g. tracks/videos/albums.
+  Future<List<Track>> search(String query, {String filter = 'tracks'});
+
+  Future<List<Track>> trending();
+
+  Future<List<Track>> recentlyPlayed();
+
+  /// Resolves a playable stream URL for [track] (audio-only by default).
+  Future<Uri> resolveStream(Track track, {bool audioOnly = true});
+
+  /// Locally indexed downloads (offline-first).
+  Future<List<Track>> downloads();
+}
