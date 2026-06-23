@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 
-/// Immutable core entity. The Domain layer knows nothing about JSON, Hive,
-/// or YouTube — only this shape.
+/// Immutable core entity. The Domain layer knows nothing about JSON internals
+/// beyond simple (de)serialization for local persistence.
 class Track {
   final String id;
   final String title;
@@ -10,7 +10,7 @@ class Track {
   final Duration duration;
   final int plays;
 
-  /// Dominant color sampled from artwork — drives ambient backgrounds.
+  /// Dominant color used for ambient backgrounds / glows.
   final Color accent;
 
   /// Null while streaming-only; set once downloaded to disk.
@@ -29,16 +29,48 @@ class Track {
 
   bool get isDownloaded => localPath != null;
 
-  Track copyWith({String? localPath}) => Track(
+  Track copyWith({String? localPath, Color? accent}) => Track(
         id: id,
         title: title,
         artist: artist,
         artworkUrl: artworkUrl,
         duration: duration,
         plays: plays,
-        accent: accent,
+        accent: accent ?? this.accent,
         localPath: localPath ?? this.localPath,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'artworkUrl': artworkUrl,
+        'seconds': duration.inSeconds,
+        'plays': plays,
+        'accent': accent.toARGB32(),
+        'localPath': localPath,
+      };
+
+  factory Track.fromJson(Map<dynamic, dynamic> j) => Track(
+        id: j['id'] as String,
+        title: j['title'] as String,
+        artist: j['artist'] as String,
+        artworkUrl: j['artworkUrl'] as String,
+        duration: Duration(seconds: (j['seconds'] as num).toInt()),
+        plays: (j['plays'] as num?)?.toInt() ?? 0,
+        accent: Color((j['accent'] as num?)?.toInt() ?? 0xFF1DB954),
+        localPath: j['localPath'] as String?,
+      );
+
+  /// Deterministic vibrant accent derived from the id — gives every YouTube
+  /// result a distinct, stable color without sampling the artwork.
+  static Color accentFor(String id) {
+    const palette = [
+      0xFF7C4DFF, 0xFF00E5FF, 0xFFFF6E40, 0xFF1DB954, 0xFFFF4081,
+      0xFF18FFB0, 0xFFFFD740, 0xFF536DFE, 0xFFE040FB, 0xFF64FFDA,
+    ];
+    return Color(palette[id.hashCode.abs() % palette.length]);
+  }
 
   @override
   bool operator ==(Object other) => other is Track && other.id == id;

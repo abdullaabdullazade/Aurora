@@ -38,6 +38,7 @@ dependencies:
   shimmer: ^3.0.0
   animations: ^2.0.11
   google_fonts: ^6.2.1
+  palette_generator: ^0.3.3+5 # dominant-color extraction for ambient bg
 
 # path_provider_android >=2.3 pulls `jni`, which forces a native CMake/NDK
 # build (needs extra SDK components). Pin to the last pure-Kotlin release so
