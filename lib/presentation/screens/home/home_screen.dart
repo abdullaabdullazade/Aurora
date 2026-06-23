@@ -46,10 +46,27 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            actions: const [
+            actions: [
+              IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.search_rounded),
+              ),
+              IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.notifications_none_rounded),
+              ),
               Padding(
-                padding: EdgeInsets.only(right: Sp.lg),
-                child: Icon(Icons.notifications_none_rounded),
+                padding: const EdgeInsets.only(right: Sp.lg, left: Sp.xs),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: AppColors.accentSweep,
+                  ),
+                  child: const Icon(Icons.person_rounded,
+                      color: Colors.black, size: 20),
+                ),
               ),
             ],
           ),

@@ -100,16 +100,54 @@ class MiniPlayer extends ConsumerWidget {
                               ),
                             ),
                             IconButton(
-                              icon: Icon(state.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded),
-                              iconSize: 30,
-                              color: AppColors.textPrimary,
+                              icon: const Icon(Icons.skip_previous_rounded),
+                              iconSize: 26,
+                              visualDensity: VisualDensity.compact,
+                              color: AppColors.textSecondary,
                               onPressed: () {
                                 HapticFeedback.lightImpact();
                                 ref
                                     .read(playerControllerProvider.notifier)
-                                    .toggle();
+                                    .previous();
+                              },
+                            ),
+                            SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: state.isLoading
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(7),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.4,
+                                        color: AppColors.accentBright,
+                                      ),
+                                    )
+                                  : IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: Icon(state.isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded),
+                                      iconSize: 32,
+                                      color: AppColors.textPrimary,
+                                      onPressed: () {
+                                        HapticFeedback.lightImpact();
+                                        ref
+                                            .read(playerControllerProvider
+                                                .notifier)
+                                            .toggle();
+                                      },
+                                    ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.skip_next_rounded),
+                              iconSize: 26,
+                              visualDensity: VisualDensity.compact,
+                              color: AppColors.textSecondary,
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                ref
+                                    .read(playerControllerProvider.notifier)
+                                    .next();
                               },
                             ),
                           ],

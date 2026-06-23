@@ -66,12 +66,22 @@ class _TrackCardState extends State<TrackCard> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: text.titleMedium),
-              const SizedBox(height: 2),
-              Text(
-                '${widget.track.artist} · ${Fmt.compact(widget.track.plays)} plays',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: text.bodyMedium,
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  const Icon(Icons.headphones_rounded,
+                      size: 12, color: AppColors.textTertiary),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${widget.track.artist} · ${Fmt.compact(widget.track.plays)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.bodyMedium
+                          ?.copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

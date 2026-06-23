@@ -8,6 +8,7 @@ import '../../state/providers.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/skeletons.dart';
 import '../../widgets/track_tile.dart';
+import '../library/add_to_playlist_sheet.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -130,9 +131,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               onTap: () => ref
                                   .read(playerControllerProvider.notifier)
                                   .playQueue(tracks, startAt: i),
-                              trailing: const Icon(
-                                  Icons.arrow_circle_down_rounded,
-                                  color: AppColors.textSecondary),
+                              trailing: IconButton(
+                                icon: const Icon(
+                                    Icons.add_circle_outline_rounded,
+                                    color: AppColors.textSecondary),
+                                onPressed: () => AddToPlaylistSheet.show(
+                                    context, tracks[i]),
+                              ),
                             ),
                           ),
                   ),
