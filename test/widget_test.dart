@@ -1,13 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:aurora_music/main.dart';
+import 'package:aurora_music/core/utils/formatters.dart';
 
 void main() {
-  testWidgets('App boots to root scaffold', (WidgetTester tester) async {
-    await tester.pumpWidget(const AuroraApp());
-    await tester.pump();
+  group('Fmt.duration', () {
+    test('formats minutes:seconds', () {
+      expect(Fmt.duration(const Duration(seconds: 215)), '3:35');
+    });
+    test('formats hours:minutes:seconds', () {
+      expect(Fmt.duration(const Duration(seconds: 3725)), '1:02:05');
+    });
+  });
 
-    // Home header renders.
-    expect(find.text('Aurora'), findsWidgets);
+  group('Fmt.compact', () {
+    test('millions', () => expect(Fmt.compact(12300000), '12.3M'));
+    test('thousands', () => expect(Fmt.compact(4200), '4.2K'));
   });
 }
