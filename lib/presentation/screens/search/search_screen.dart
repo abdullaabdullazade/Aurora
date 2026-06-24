@@ -64,8 +64,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 textInputAction: TextInputAction.search,
                 style: text.bodyLarge,
                 cursorColor: AppColors.accentBright,
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   border: InputBorder.none,
+                  isCollapsed: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
                   hintText: 'Songs, artists, videos…',
                   hintStyle: text.bodyLarge
                       ?.copyWith(color: AppColors.textTertiary),

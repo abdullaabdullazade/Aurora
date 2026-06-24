@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/track.dart';
 import '../state/connectivity_controller.dart';
+import '../screens/library/track_context_sheet.dart';
 import 'artwork.dart';
 
 /// Vertical card for horizontal carousels. Scales down on press for tactility.
@@ -46,6 +47,10 @@ class _TrackCardState extends ConsumerState<TrackCard> {
           onTap: () {
             HapticFeedback.lightImpact();
             widget.onTap();
+          },
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            TrackContextSheet.show(context, widget.track);
           },
           child: AnimatedScale(
             scale: _scale,

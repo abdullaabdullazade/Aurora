@@ -15,6 +15,7 @@ import '../../state/favorites_controller.dart';
 import '../../state/output_controller.dart';
 import '../artist/artist_detail_screen.dart';
 import '../library/add_to_playlist_sheet.dart';
+import '../library/track_context_sheet.dart';
 import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
 import 'sleep_timer_sheet.dart';
@@ -417,6 +418,14 @@ class _TopBar extends ConsumerWidget {
           icon: sleeping ? Icons.bedtime_rounded : Icons.bedtime_outlined,
           highlight: sleeping,
           onTap: () => SleepTimerSheet.show(context),
+        ),
+        const SizedBox(width: Sp.sm),
+        _RoundIcon(
+          icon: Icons.more_horiz_rounded,
+          onTap: () {
+            final t = ref.read(playerControllerProvider).current;
+            if (t != null) TrackContextSheet.show(context, t);
+          },
         ),
       ],
     );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../domain/entities/track.dart';
+import '../screens/home/see_all_screen.dart';
 import '../state/player_controller.dart';
 import '../state/providers.dart';
 import 'skeletons.dart';
@@ -34,9 +35,19 @@ class SectionCarousel extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: text.titleLarge),
-              Text('See all',
-                  style: text.labelLarge
-                      ?.copyWith(color: AppColors.textSecondary)),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final list = data.valueOrNull ?? const [];
+                  if (list.isEmpty) return;
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SeeAllScreen(title: title, tracks: list),
+                  ));
+                },
+                child: Text('See all',
+                    style: text.labelLarge
+                        ?.copyWith(color: AppColors.accentBright)),
+              ),
             ],
           ),
         ),
