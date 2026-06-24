@@ -38,6 +38,10 @@ final downloadsProvider = FutureProvider<List<Track>>(
   (ref) => ref.watch(musicRepositoryProvider).downloads(),
 );
 
+/// Selected bottom-nav tab (0 Home · 1 Search · 2 Library). Lets any screen
+/// switch tabs (e.g. Home's search button).
+final navIndexProvider = StateProvider<int>((ref) => 0);
+
 // --- Search (debounced in the UI) ---------------------------------------
 final searchQueryProvider = StateProvider<String>((ref) => '');
 

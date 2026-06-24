@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../state/player_controller.dart';
+import '../state/providers.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/frosted_nav_bar.dart';
 import '../widgets/mini_player.dart';
@@ -17,8 +18,6 @@ class RootScaffold extends ConsumerStatefulWidget {
 }
 
 class _RootScaffoldState extends ConsumerState<RootScaffold> {
-  int _index = 0;
-
   static const _destinations = [
     NavDest(Icons.home_outlined, Icons.home_rounded, 'Home'),
     NavDest(Icons.search_outlined, Icons.search_rounded, 'Search'),
@@ -30,6 +29,7 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final index = ref.watch(navIndexProvider);
     // Ambient color follows the current track for a cohesive vibe.
     final seed = ref.watch(playerControllerProvider).current?.accent ??
         AppColors.accent;
@@ -47,8 +47,8 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                 duration: const Duration(milliseconds: 320),
                 switchInCurve: Curves.easeOut,
                 child: KeyedSubtree(
-                  key: ValueKey(_index),
-                  child: _pages[_index],
+                  key: ValueKey(index),
+                  child: _pages[index],
                 ),
               ),
             ),
@@ -62,9 +62,10 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
                   SafeArea(
                     top: false,
                     child: FrostedNavBar(
-                      index: _index,
+                      index: index,
                       destinations: _destinations,
-                      onTap: (i) => setState(() => _index = i),
+                      onTap: (i) =>
+                          ref.read(navIndexProvider.notifier).state = i,
                     ),
                   ),
                 ],

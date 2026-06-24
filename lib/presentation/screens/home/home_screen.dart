@@ -52,11 +52,12 @@ class HomeScreen extends ConsumerWidget {
             ),
             actions: [
               IconButton(
-                onPressed: () {},
+                onPressed: () =>
+                    ref.read(navIndexProvider.notifier).state = 1,
                 icon: const Icon(Icons.search_rounded),
               ),
               IconButton(
-                onPressed: () {},
+                onPressed: () => _showNotifications(context),
                 icon: const Icon(Icons.notifications_none_rounded),
               ),
               Padding(
@@ -103,6 +104,61 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+void _showNotifications(BuildContext context) {
+  final text = Theme.of(context).textTheme;
+  final items = [
+    (Icons.auto_awesome_rounded, 'Your daily mix is ready',
+        'Fresh picks for your afternoon'),
+    (Icons.local_fire_department_rounded, 'Top Charts updated',
+        'See what’s trending right now'),
+    (Icons.bedtime_rounded, 'Wind-down reminder',
+        'Set a sleep timer tonight'),
+  ];
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Glass(
+      radius: const BorderRadius.vertical(top: Radii.xl),
+      blur: 30,
+      opacity: 0.16,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: Sp.md),
+            Container(
+                width: 44,
+                height: 4,
+                decoration: const BoxDecoration(
+                    color: AppColors.glassStroke, borderRadius: Radii.rPill)),
+            Padding(
+              padding: const EdgeInsets.all(Sp.lg),
+              child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Notifications', style: text.titleLarge)),
+            ),
+            for (final (icon, title, body) in items)
+              ListTile(
+                leading: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                      borderRadius: Radii.rSm,
+                      gradient: AppColors.accentSweep),
+                  child: Icon(icon, color: Colors.black, size: 20),
+                ),
+                title: Text(title, style: text.titleMedium),
+                subtitle: Text(body, style: text.bodyMedium),
+              ),
+            const SizedBox(height: Sp.md),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Breathing offline indicator near the header.
