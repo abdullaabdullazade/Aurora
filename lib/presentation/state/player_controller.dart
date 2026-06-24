@@ -307,9 +307,16 @@ class PlayerController extends Notifier<PlayerState> {
         size: const Size(120, 120),
         maximumColorCount: 8,
       );
-      final Color? c =
+      final Color? raw =
           palette.vibrantColor?.color ?? palette.dominantColor?.color;
-      if (c == null) return;
+      if (raw == null) return;
+      // Normalize so the accent is always vivid + readable on the dark veil
+      // (raw pale-yellow palettes clashed with UI elements).
+      final hsl = HSLColor.fromColor(raw);
+      final c = hsl
+          .withSaturation(hsl.saturation.clamp(0.55, 1.0))
+          .withLightness(hsl.lightness.clamp(0.45, 0.62))
+          .toColor();
       final list = [...state.queue];
       final i = list.indexWhere((e) => e.id == track.id);
       if (i >= 0) {
