@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../state/providers.dart';
 import '../widgets/ambient_background.dart';
@@ -17,6 +18,17 @@ class RootScaffold extends ConsumerStatefulWidget {
 }
 
 class _RootScaffoldState extends ConsumerState<RootScaffold> {
+  @override
+  void initState() {
+    super.initState();
+    // Tapping a download notification jumps to Library → Queue.
+    NotificationService.instance.onOpenDownloads = () {
+      if (!mounted) return;
+      ref.read(navIndexProvider.notifier).state = 2;
+      ref.read(libraryTabProvider.notifier).state = 3;
+    };
+  }
+
   static const _destinations = [
     NavDest(Icons.home_outlined, Icons.home_rounded, 'Home'),
     NavDest(Icons.search_outlined, Icons.search_rounded, 'Search'),

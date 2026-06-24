@@ -42,6 +42,10 @@ final downloadsProvider = FutureProvider<List<Track>>(
 /// switch tabs (e.g. Home's search button).
 final navIndexProvider = StateProvider<int>((ref) => 0);
 
+/// Selected Library tab (0 Playlists · 1 On device · 2 Downloaded · 3 Queue).
+/// Lets a download notification jump straight to the Queue.
+final libraryTabProvider = StateProvider<int>((ref) => 0);
+
 // --- Search (debounced in the UI) ---------------------------------------
 final searchQueryProvider = StateProvider<String>((ref) => '');
 

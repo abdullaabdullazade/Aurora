@@ -16,6 +16,7 @@ class NotificationService {
   void Function(String trackId)? onDownloadCancel;
   void Function(String trackId)? onDownloadPause;
   void Function(String trackId)? onDownloadResume;
+  void Function()? onOpenDownloads; // tapping a download notification body
 
   static const _engagementChannel = AndroidNotificationChannel(
     'com.aurora.music.channel.engagement',
@@ -51,7 +52,10 @@ class NotificationService {
 
   void _onResponse(NotificationResponse r) {
     final a = r.actionId;
-    if (a == null) return;
+    if (a == null) {
+      if (r.payload == 'downloads') onOpenDownloads?.call();
+      return;
+    }
     if (a.startsWith('cancel_')) onDownloadCancel?.call(a.substring(7));
     if (a.startsWith('pause_')) onDownloadPause?.call(a.substring(6));
     if (a.startsWith('resume_')) onDownloadResume?.call(a.substring(7));
@@ -84,7 +88,7 @@ class NotificationService {
       ],
     );
     await _plugin.show(_dlId(trackId), 'Downloading · $percent%', title,
-        NotificationDetails(android: details));
+        NotificationDetails(android: details), payload: 'downloads');
   }
 
   Future<void> showDownloadPaused(
@@ -110,7 +114,7 @@ class NotificationService {
       ],
     );
     await _plugin.show(_dlId(trackId), 'Paused · $percent%', title,
-        NotificationDetails(android: details));
+        NotificationDetails(android: details), payload: 'downloads');
   }
 
   Future<void> showDownloadDone(String trackId, String title) async {

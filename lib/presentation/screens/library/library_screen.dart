@@ -66,6 +66,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   Widget build(BuildContext context) {
     final downloads = ref.watch(downloadsProvider);
     final text = Theme.of(context).textTheme;
+    // Jump to a tab when asked (e.g. download notification → Queue).
+    ref.listen(libraryTabProvider, (_, i) {
+      if (i >= 0 && i < _tabs.length) _tabs.animateTo(i);
+    });
 
     return SafeArea(
       bottom: false,
