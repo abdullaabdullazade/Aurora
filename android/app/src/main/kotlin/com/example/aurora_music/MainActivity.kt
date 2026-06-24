@@ -39,22 +39,26 @@ class MainActivity : AudioServiceActivity() {
                     // System output picker — lets the user route to phone
                     // speaker / Bluetooth / headphones even while BT is on.
                     "openOutputPicker" -> {
-                        try {
-                            val i = Intent("android.settings.panel.action.MEDIA_OUTPUT")
+                        val intents = listOf(
+                            Intent("android.settings.panel.action.MEDIA_OUTPUT")
                                 .putExtra(
                                     "com.android.settings.panel.extra.PACKAGE_NAME",
-                                    packageName,
-                                )
-                            startActivity(i)
-                            result.success(true)
-                        } catch (e: Exception) {
+                                    packageName),
+                            Intent("com.android.settings.action.MEDIA_OUTPUT"),
+                            Intent(Settings.ACTION_SOUND_SETTINGS),
+                            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+                            Intent(Settings.ACTION_SETTINGS),
+                        )
+                        var opened = false
+                        for (i in intents) {
                             try {
-                                startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
-                                result.success(true)
-                            } catch (e2: Exception) {
-                                result.success(false)
-                            }
+                                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(i)
+                                opened = true
+                                break
+                            } catch (_: Exception) { /* try next */ }
                         }
+                        result.success(opened)
                     }
                     else -> result.notImplemented()
                 }
