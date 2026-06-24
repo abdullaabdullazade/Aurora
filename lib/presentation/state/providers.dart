@@ -22,6 +22,18 @@ final recentlyPlayedProvider = FutureProvider<List<Track>>(
   (ref) => ref.watch(musicRepositoryProvider).recentlyPlayed(),
 );
 
+final topChartsProvider = FutureProvider<List<Track>>(
+  (ref) => ref.watch(musicRepositoryProvider).search('top charts this week'),
+);
+
+/// Tracks for an artist (real artist APIs aren't available client-side, so we
+/// search the artist name and surface their top results).
+final artistTracksProvider =
+    FutureProvider.family<List<Track>, String>((ref, name) async {
+  if (name.trim().isEmpty) return const [];
+  return ref.watch(musicRepositoryProvider).search(name);
+});
+
 final downloadsProvider = FutureProvider<List<Track>>(
   (ref) => ref.watch(musicRepositoryProvider).downloads(),
 );

@@ -14,6 +14,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trending = ref.watch(trendingProvider);
+    final charts = ref.watch(topChartsProvider);
     final recent = ref.watch(recentlyPlayedProvider);
     final online = ref.watch(isOnlineProvider);
     final text = Theme.of(context).textTheme;
@@ -78,6 +79,10 @@ class HomeScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: SectionCarousel(
                 title: 'Trending now', data: trending, cardSize: 168),
+          ),
+          SliverToBoxAdapter(
+            child: SectionCarousel(
+                title: '🔥 Top Charts', data: charts, cardSize: 168),
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
