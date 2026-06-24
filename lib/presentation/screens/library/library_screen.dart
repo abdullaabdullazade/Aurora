@@ -12,6 +12,7 @@ import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
 import '../../state/favorites_controller.dart';
+import '../../state/download_controller.dart';
 import 'device_music_tab.dart';
 import 'favorites_screen.dart';
 import 'playlist_detail_screen.dart';
@@ -385,24 +386,66 @@ class _DownloadedTab extends ConsumerWidget {
   }
 }
 
-/// Live download queue placeholder (real engine wired separately).
-class _DownloadingTab extends StatelessWidget {
+/// Live download queue — shows in-flight downloads with progress.
+class _DownloadingTab extends ConsumerWidget {
   const _DownloadingTab();
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final jobs = ref.watch(downloadControllerProvider);
     final text = Theme.of(context).textTheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_download_outlined,
-              size: 64, color: AppColors.textTertiary),
-          const SizedBox(height: Sp.md),
-          Text('Download queue is empty', style: text.titleMedium),
-          const SizedBox(height: Sp.xs),
-          Text('Active downloads show progress here', style: text.bodyMedium),
-        ],
-      ),
+    if (jobs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_download_outlined,
+                size: 64, color: AppColors.textTertiary),
+            const SizedBox(height: Sp.md),
+            Text('Download queue is empty', style: text.titleMedium),
+            const SizedBox(height: Sp.xs),
+            Text('Long-press a track → Download', style: text.bodyMedium),
+          ],
+        ),
+      );
+    }
+    final entries = jobs.entries.toList();
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
+      itemCount: entries.length,
+      separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
+      itemBuilder: (_, i) {
+        final pct = entries[i].value;
+        return Glass(
+          radius: Radii.rLg,
+          padding: const EdgeInsets.all(Sp.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.downloading_rounded,
+                      color: AppColors.accentBright),
+                  const SizedBox(width: Sp.sm),
+                  Expanded(
+                      child: Text('Downloading…', style: text.titleMedium)),
+                  Text('${(pct * 100).round()}%', style: text.labelSmall),
+                ],
+              ),
+              const SizedBox(height: Sp.md),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: pct == 0 ? null : pct,
+                  minHeight: 5,
+                  backgroundColor: AppColors.glassStroke,
+                  valueColor:
+                      const AlwaysStoppedAnimation(AppColors.accentBright),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

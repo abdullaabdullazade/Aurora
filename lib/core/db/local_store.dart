@@ -10,6 +10,7 @@ class LocalStore {
   static const _downloadsBox = 'downloads';
   static const _favoritesBox = 'favorites';
   static const _settingsBox = 'settings';
+  static const _lyricsBox = 'lyrics';
   static const _recentsKey = 'list';
   static const _maxRecents = 30;
 
@@ -18,6 +19,7 @@ class LocalStore {
   late final Box<dynamic> _downloads;
   late final Box<dynamic> _favorites;
   late final Box<dynamic> _settings;
+  late final Box<dynamic> _lyrics;
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -26,6 +28,19 @@ class LocalStore {
     _downloads = await Hive.openBox(_downloadsBox);
     _favorites = await Hive.openBox(_favoritesBox);
     _settings = await Hive.openBox(_settingsBox);
+    _lyrics = await Hive.openBox(_lyricsBox);
+  }
+
+  // --- Offline lyrics (saved alongside downloads) ------------------------
+  Future<void> saveLyrics(String id, Map<String, dynamic> json) =>
+      _lyrics.put(id, json);
+
+  Map<dynamic, dynamic>? lyrics(String id) =>
+      _lyrics.get(id) as Map<dynamic, dynamic>?;
+
+  Future<void> removeDownload(String id) async {
+    await _downloads.delete(id);
+    await _lyrics.delete(id);
   }
 
   // --- Favorites ---------------------------------------------------------

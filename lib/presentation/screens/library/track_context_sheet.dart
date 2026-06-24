@@ -6,6 +6,7 @@ import '../../../core/ringtone/ringtone_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/track.dart';
+import '../../state/download_controller.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../album/album_detail_screen.dart';
@@ -108,6 +109,22 @@ class TrackContextSheet extends ConsumerWidget {
                 ],
               ),
             ),
+            if (track.localPath == null)
+              _Item(
+                icon: Icons.download_rounded,
+                label: 'Download (MP3 + lyrics)',
+                onTap: () {
+                  Navigator.pop(context);
+                  ref
+                      .read(downloadControllerProvider.notifier)
+                      .download(track);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: AppColors.elevated,
+                    content: Text('Downloading “${track.title}”…'),
+                  ));
+                },
+              ),
             _Item(
               icon: Icons.playlist_add_rounded,
               label: 'Add to playlist',
@@ -122,7 +139,9 @@ class TrackContextSheet extends ConsumerWidget {
               onTap: () => _push(
                   context,
                   ArtistDetailScreen(
-                      artist: track.artist, accent: track.accent)),
+                      artist: track.artist,
+                      accent: track.accent,
+                      channelUrl: track.channelUrl)),
             ),
             _Item(
               icon: Icons.album_rounded,
