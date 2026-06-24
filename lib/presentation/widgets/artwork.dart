@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:on_audio_query_pluse/on_audio_query.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/entities/track.dart';
 
@@ -45,19 +44,7 @@ class Artwork extends StatelessWidget {
   }
 
   Widget _image() {
-    // Device tracks: embedded artwork via MediaStore id.
-    final localId = track.localPath != null ? int.tryParse(track.id) : null;
-    if (localId != null) {
-      return QueryArtworkWidget(
-        id: localId,
-        type: ArtworkType.AUDIO,
-        artworkWidth: size,
-        artworkHeight: size,
-        artworkFit: BoxFit.cover,
-        keepOldArtwork: true,
-        nullArtworkWidget: _fallback(),
-      );
-    }
+    // Local/device tracks: soft gradient fallback (no plugin — it crashed).
     if (track.artworkUrl.isEmpty) return _fallback();
     return CachedNetworkImage(
       imageUrl: track.artworkUrl,

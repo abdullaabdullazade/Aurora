@@ -29,8 +29,8 @@ dependencies:
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4
 
-  # On-device media library (MediaStore: songs, artwork, folders)
-  on_audio_query_pluse: ^2.9.4
+  # On-device media library now via a native Kotlin MediaStore MethodChannel
+  # (the on_audio_query plugin crashed: "Reply already submitted").
 
   # Connectivity (offline-mode aesthetic shift)
   connectivity_plus: ^6.1.0
