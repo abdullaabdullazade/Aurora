@@ -16,7 +16,10 @@ Android emulator reaches the host at http://10.0.2.2:8000
 """
 from __future__ import annotations
 
+import os
 import re
+import socket
+import threading
 import time
 from typing import Any
 
@@ -26,6 +29,43 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Aurora Resolver")
+
+
+def _lan_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:  # noqa: BLE001
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def _register_loop() -> None:
+    """Publish this machine's current LAN URL to the Vercel registry so the
+    mobile app always finds us even when the IP changes."""
+    url = os.environ.get("REGISTRY_URL")
+    secret = os.environ.get("REGISTER_SECRET")
+    port = os.environ.get("PORT", "8000")
+    if not url or not secret:
+        return
+    while True:
+        try:
+            httpx.post(
+                f"{url}/api/register",
+                headers={"x-secret": secret},
+                json={"url": f"http://{_lan_ip()}:{port}"},
+                timeout=8,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(60)
+
+
+@app.on_event("startup")
+def _start_register() -> None:
+    threading.Thread(target=_register_loop, daemon=True).start()
 
 # tiny in-memory cache: video_id -> (expiry_ts, direct_url, headers)
 _stream_cache: dict[str, tuple[float, str, dict[str, str]]] = {}

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'core/config/app_config.dart';
 import 'core/db/local_store.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
@@ -26,6 +28,10 @@ Future<void> main() async {
   final store = LocalStore();
   await store.init();
 
+  // Resolve the backend URL from the always-on Vercel registry (the LAN IP
+  // changes); fall back to the hardcoded AppConfig.apiBase if unreachable.
+  await _resolveBackend();
+
   // Engagement notifications (daily nudges). Best-effort — never block boot.
   try {
     await NotificationService.instance.init();
@@ -38,6 +44,16 @@ Future<void> main() async {
       child: const AuroraApp(),
     ),
   );
+}
+
+Future<void> _resolveBackend() async {
+  try {
+    final res = await Dio()
+        .get('${AppConfig.registryUrl}/api/server')
+        .timeout(const Duration(seconds: 5));
+    final url = (res.data as Map)['url'];
+    if (url is String && url.startsWith('http')) AppConfig.apiBase = url;
+  } catch (_) {/* keep LAN fallback */}
 }
 
 class AuroraApp extends ConsumerWidget {

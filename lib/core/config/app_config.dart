@@ -1,9 +1,12 @@
 /// Runtime configuration.
 abstract final class AppConfig {
-  /// Resolver server base URL.
+  /// Vercel registry that always returns the PC resolver's current URL.
+  /// Set this to your deployed registry, e.g. https://aurora-registry.vercel.app
+  static const String registryUrl = 'https://aurora-registry.vercel.app';
+
+  /// Resolver server base URL. Overridden at launch from [registryUrl] when
+  /// reachable; otherwise this LAN fallback is used.
   ///
-  /// Android emulator reaches the host machine at 10.0.2.2 (NOT localhost).
-  /// For a physical phone on the same Wi-Fi, replace with the PC's LAN IP,
-  /// e.g. http://192.168.1.20:8000
-  static const String apiBase = 'http://192.168.0.193:8000';
+  /// Android emulator → http://10.0.2.2:8000 · physical phone → PC LAN IP.
+  static String apiBase = 'http://192.168.0.193:8000';
 }
