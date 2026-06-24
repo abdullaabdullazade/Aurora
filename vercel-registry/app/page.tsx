@@ -1,21 +1,7 @@
-import { kv, KEY_URL, KEY_TS } from '../lib/redis';
-
 export const dynamic = 'force-dynamic';
 
-export default async function Page() {
-  let url: string | null = null;
-  let ts: number | null = null;
-  try {
-    const redis = kv();
-    if (redis) {
-      url = (await redis.get<string>(KEY_URL)) ?? null;
-      ts = (await redis.get<number>(KEY_TS)) ?? null;
-    }
-  } catch {
-    /* redis not configured yet */
-  }
-  const seen = ts ? new Date(ts).toUTCString() : '—';
-
+export default function Page() {
+  const url = process.env.BACKEND_URL ?? null;
   return (
     <main
       style={{
@@ -25,7 +11,8 @@ export default async function Page() {
         alignItems: 'center',
         justifyContent: 'center',
         gap: 12,
-        background: 'radial-gradient(1200px 600px at 50% -10%, #0c2a1b, #0b0c10)',
+        background:
+          'radial-gradient(1200px 600px at 50% -10%, #0c2a1b, #0b0c10)',
         color: '#fff',
         fontFamily: 'system-ui, sans-serif',
       }}
@@ -44,7 +31,6 @@ export default async function Page() {
       >
         {url ?? 'not registered yet'}
       </code>
-      <p style={{ color: '#6E6E6E', fontSize: 13 }}>last seen: {seen}</p>
     </main>
   );
 }
