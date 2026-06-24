@@ -2,7 +2,7 @@
 
 Premium media **downloader + player** for Flutter. YouTube-Music feature set, Spotify-grade *soft-dark glassmorphic* UI. Offline-first, 60/120 FPS, Clean Architecture.
 
-> Runs **fully offline out of the box** — seeded with mock data so every screen looks finished. Flip one provider line to go live.
+> **Live.** Real YouTube search + audio streaming via `youtube_explode_dart`, real playback via `just_audio`, dynamic album-art colors via `palette_generator`, Hive-persisted playlists & recents. Verified on Android.
 
 ## ✨ What's inside
 

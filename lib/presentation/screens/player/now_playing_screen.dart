@@ -5,10 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../domain/entities/track.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/playback_controls.dart';
 import '../../state/player_controller.dart';
+import '../../state/favorites_controller.dart';
+import '../library/add_to_playlist_sheet.dart';
 import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
 
@@ -17,21 +20,34 @@ class NowPlayingScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Surface playback errors as a snackbar.
+    ref.listen(playerControllerProvider.select((s) => s.error), (_, err) {
+      if (err != null) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.elevated,
+            content: Text(err),
+          ));
+      }
+    });
+
     final state = ref.watch(playerControllerProvider);
     final track = state.current;
     if (track == null) return const SizedBox.shrink();
-    final text = Theme.of(context).textTheme;
     final media = MediaQuery.of(context);
+    final artSize = media.size.width - Sp.xl * 2;
 
     return Scaffold(
       backgroundColor: AppColors.voidBlack,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // --- Blurred album-art ambient backdrop ---
+          // Blurred album-art ambient backdrop.
           RepaintBoundary(
             child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+              imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
               child: Artwork(
                 track: track,
                 size: media.size.width * 1.4,
@@ -43,44 +59,43 @@ class NowPlayingScreen extends ConsumerWidget {
             decoration:
                 BoxDecoration(gradient: AppColors.artVeil(track.accent)),
           ),
-          // --- Foreground ---
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: Sp.xl),
               child: Column(
                 children: [
-                  _TopBar(subtitle: 'Playing from Aurora'),
-                  const Spacer(flex: 2),
+                  _TopBar(source: 'From your search'),
+                  const Spacer(flex: 3),
+                  // Artwork with loading overlay.
                   Hero(
                     tag: 'art_${track.id}',
-                    child: Artwork(
-                      track: track,
-                      size: media.size.width - Sp.xl * 2,
-                      radius: Radii.rXl,
-                      glow: true,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Artwork(
+                          track: track,
+                          size: artSize,
+                          radius: Radii.rXl,
+                          glow: true,
+                        ),
+                        if (state.isLoading)
+                          Container(
+                            width: artSize,
+                            height: artSize,
+                            decoration: BoxDecoration(
+                              borderRadius: Radii.rXl,
+                              color: Colors.black.withValues(alpha: 0.35),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                  color: AppColors.accentBright),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  const Spacer(flex: 2),
-                  // Title + artist + like
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(track.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: text.headlineMedium),
-                            const SizedBox(height: Sp.xs),
-                            Text(track.artist, style: text.bodyMedium),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.favorite_border_rounded,
-                          color: AppColors.accentBright, size: 28),
-                    ],
-                  ),
+                  const Spacer(flex: 3),
+                  _TitleRow(track: track),
                   const SizedBox(height: Sp.lg),
                   _Seeker(
                     progress: state.progress,
@@ -90,10 +105,10 @@ class NowPlayingScreen extends ConsumerWidget {
                     onSeek: (f) =>
                         ref.read(playerControllerProvider.notifier).seek(f),
                   ),
-                  const SizedBox(height: Sp.sm),
+                  const SizedBox(height: Sp.md),
                   PlaybackControls(accent: track.accent),
-                  const Spacer(flex: 1),
-                  const _BottomActions(),
+                  const Spacer(flex: 2),
+                  _BottomActions(track: track),
                   const SizedBox(height: Sp.md),
                 ],
               ),
@@ -106,32 +121,122 @@ class NowPlayingScreen extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  final String subtitle;
-  const _TopBar({required this.subtitle});
+  final String source;
+  const _TopBar({required this.source});
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Row(
       children: [
-        IconButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+        _RoundIcon(
+          icon: Icons.keyboard_arrow_down_rounded,
+          onTap: () => Navigator.of(context).maybePop(),
         ),
         Expanded(
           child: Column(
             children: [
-              Text('NOW PLAYING', style: text.labelSmall),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: text.titleMedium, overflow: TextOverflow.ellipsis),
+              Text('NOW PLAYING',
+                  style: text.labelSmall
+                      ?.copyWith(letterSpacing: 1.5, color: AppColors.textSecondary)),
+              const SizedBox(height: 3),
+              Text(source,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.titleMedium),
             ],
           ),
         ),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.more_horiz_rounded, size: 28),
-        ),
+        _RoundIcon(icon: Icons.more_horiz_rounded, onTap: () {}),
       ],
+    );
+  }
+}
+
+class _RoundIcon extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _RoundIcon({required this.icon, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.06),
+          border: Border.all(color: AppColors.glassStroke),
+        ),
+        child: Icon(icon, size: 24, color: AppColors.textPrimary),
+      ),
+    );
+  }
+}
+
+class _TitleRow extends StatelessWidget {
+  final Track track;
+  const _TitleRow({required this.track});
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(track.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.headlineMedium),
+              const SizedBox(height: Sp.xs),
+              Text('${track.artist}  ·  ${Fmt.compact(track.plays)} plays',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.bodyMedium),
+            ],
+          ),
+        ),
+        const SizedBox(width: Sp.md),
+        FavButton(track: track, size: 30),
+      ],
+    );
+  }
+}
+
+/// Animated favorite (Liked Songs) toggle with haptic + pop scale.
+class FavButton extends ConsumerWidget {
+  final Track track;
+  final double size;
+  const FavButton({super.key, required this.track, this.size = 28});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final liked = ref.watch(favoritesProvider
+        .select((list) => list.any((t) => t.id == track.id)));
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        ref.read(favoritesProvider.notifier).toggle(track);
+      },
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 240),
+        transitionBuilder: (child, anim) =>
+            ScaleTransition(scale: anim, child: child),
+        child: Icon(
+          liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          key: ValueKey(liked),
+          color: liked ? AppColors.accentBright : AppColors.textSecondary,
+          size: size,
+          shadows: liked
+              ? [
+                  const Shadow(
+                      color: AppColors.accentBright, blurRadius: 16),
+                ]
+              : null,
+        ),
+      ),
     );
   }
 }
@@ -161,14 +266,13 @@ class _SeekerState extends State<_Seeker> {
   @override
   Widget build(BuildContext context) {
     final value = _drag ?? widget.progress;
-    final shown = _drag != null
-        ? widget.total * _drag!
-        : widget.position;
+    final shown = _drag != null ? widget.total * _drag! : widget.position;
     final text = Theme.of(context).textTheme;
     return Column(
       children: [
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
+            trackHeight: 5,
             activeTrackColor: widget.accent,
             thumbColor: Colors.white,
             overlayColor: widget.accent.withValues(alpha: 0.2),
@@ -202,16 +306,15 @@ class _SeekerState extends State<_Seeker> {
 }
 
 class _BottomActions extends StatelessWidget {
-  const _BottomActions();
+  final Track track;
+  const _BottomActions({required this.track});
 
-  void _sheet(BuildContext context, Widget child) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => child,
-    );
-  }
+  void _sheet(BuildContext context, Widget child) => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => child,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -227,9 +330,9 @@ class _BottomActions extends StatelessWidget {
             onTap: () => _sheet(context, const LyricsSheet()),
           ),
           _Action(
-            icon: Icons.arrow_circle_down_rounded,
-            label: 'Download',
-            onTap: () => HapticFeedback.mediumImpact(),
+            icon: Icons.playlist_add_rounded,
+            label: 'Add',
+            onTap: () => AddToPlaylistSheet.show(context, track),
           ),
           _Action(
             icon: Icons.queue_music_rounded,

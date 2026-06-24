@@ -117,12 +117,21 @@ class _NewPlaylistButton extends ConsumerWidget {
           return AlertDialog(
             backgroundColor: AppColors.elevated,
             shape: const RoundedRectangleBorder(borderRadius: Radii.rLg),
-            title: const Text('New playlist'),
+            title: const Text('New playlist',
+                style: TextStyle(color: AppColors.textPrimary)),
             content: TextField(
               controller: ctrl,
               autofocus: true,
               cursorColor: AppColors.accentBright,
-              decoration: const InputDecoration(hintText: 'Playlist name'),
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: 'Playlist name',
+                hintStyle: TextStyle(color: AppColors.textTertiary),
+                enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.glassStroke)),
+                focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.accentBright)),
+              ),
             ),
             actions: [
               TextButton(
