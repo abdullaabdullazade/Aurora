@@ -51,3 +51,5 @@ cookie.txt
 cookies.txt
 server/cookies.txt
 **/cookies.txt
+server/proxies.txt
+**/proxies.txt

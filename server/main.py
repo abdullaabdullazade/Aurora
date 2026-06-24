@@ -92,28 +92,63 @@ def _cookiefile() -> str | None:
     return path
 
 
-def _ydl(opts: dict[str, Any]) -> yt_dlp.YoutubeDL:
+_proxy_cache: list[str] = []
+
+
+def _proxies() -> list[str]:
+    """Webshare residential proxies as 'http://user:pass@ip:port' URLs.
+
+    YouTube bot-walls datacenter IPs; routing extraction through residential
+    proxies bypasses it entirely (no cookies/PO-token needed). File format is
+    one 'ip:port:user:pass' per line."""
+    global _proxy_cache
+    if _proxy_cache:
+        return _proxy_cache
+    path = os.path.join(os.path.dirname(__file__), "proxies.txt")
+    if not os.path.exists(path):
+        return []
+    out: list[str] = []
+    with open(path) as f:
+        for line in f:
+            parts = line.strip().split(":")
+            if len(parts) == 4:
+                ip, port, user, pw = parts
+                out.append(f"http://{user}:{pw}@{ip}:{port}")
+    _proxy_cache = out
+    return out
+
+
+def _pick_proxy() -> str | None:
+    import random
+    pool = _proxies()
+    return random.choice(pool) if pool else None
+
+
+def _ydl(opts: dict[str, Any], use_cookies: bool = True) -> yt_dlp.YoutubeDL:
     base = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
     }
-    cf = _cookiefile()
-    if cf:
-        # yt-dlp saves the (possibly rotated/expired) cookiejar BACK to the
-        # cookiefile after each run, which degrades the master over time until
-        # it loses the auth cookies and hits the bot wall. Hand it a throwaway
-        # copy per request so the master cookies.txt stays pristine.
-        import shutil
-        import tempfile
-        fd, tmp = tempfile.mkstemp(prefix="ytck_", suffix=".txt")
-        os.close(fd)
-        try:
-            shutil.copyfile(cf, tmp)
-            base["cookiefile"] = tmp
-        except Exception:  # noqa: BLE001
-            base["cookiefile"] = cf
+    # Use cookies alongside the proxy (belt-and-suspenders): residential IP
+    # bypasses the bot wall, the logged-in account unlocks higher-quality and
+    # age/region-restricted formats.
+    if use_cookies:
+        cf = _cookiefile()
+        if cf:
+            # yt-dlp writes the (possibly rotated) cookiejar BACK to the
+            # cookiefile, degrading the master over time. Hand it a throwaway
+            # copy per request so the master cookies.txt stays pristine.
+            import shutil
+            import tempfile
+            fd, tmp = tempfile.mkstemp(prefix="ytck_", suffix=".txt")
+            os.close(fd)
+            try:
+                shutil.copyfile(cf, tmp)
+                base["cookiefile"] = tmp
+            except Exception:  # noqa: BLE001
+                base["cookiefile"] = cf
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
 
@@ -152,6 +187,9 @@ def health() -> dict[str, bool]:
 @app.get("/search")
 def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
     opts = {"extract_flat": True}
+    proxy = _pick_proxy()
+    if proxy:
+        opts["proxy"] = proxy
     query = q if q.startswith("ytsearch") else f"ytsearch{limit}:{q}"
     try:
         with _ydl(opts) as ydl:
@@ -237,6 +275,25 @@ def _lock_for(video_id: str) -> threading.Lock:
         return lk
 
 
+def _normalize_cache(video_id: str, path: str) -> str | None:
+    """yt-dlp writes <id>.<ext> (m4a/mp4). Rename the produced file to the
+    canonical .mp4 cache path and return it (None if nothing was produced)."""
+    import glob
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    hits = [
+        p for p in glob.glob(os.path.join(_CACHE_DIR, f"{video_id}.*"))
+        if os.path.getsize(p) > 0
+    ]
+    if not hits:
+        return None
+    try:
+        os.replace(hits[0], path)
+        return path
+    except Exception:  # noqa: BLE001
+        return hits[0]
+
+
 def _ensure_local(video_id: str) -> str:
     """Download the track to a local cache file and return its path.
 
@@ -268,22 +325,34 @@ def _ensure_local(video_id: str) -> str:
         last_err: Exception | None = None
         for attempt, client in enumerate(clients):
             opts = {
-                "format": "bestaudio/best",
-                # web client + bgutil PO-token passes the datacenter bot/login
-                # wall; nsig/signature solved via deno + EJS (fetched once).
+                # Audio-only, m4a/mp4 only (itag 140 ≈ 4MB, then any m4a audio,
+                # last resort itag 18 360p ≈ 3MB). No bare "bestaudio" (could be
+                # webm/opus) and no "/best" (multi-hundred-MB video) — keeps the
+                # container mp4-family so we can serve it as audio/mp4.
+                "format": "140/bestaudio[ext=m4a]/18",
+                # Residential proxy bypasses the datacenter bot wall; nsig/
+                # signature solved via deno + EJS (fetched once).
                 "extractor_args": {"youtube": {"player_client": client}},
                 "remote_components": ["ejs:github"],
-                "outtmpl": os.path.join(_CACHE_DIR, "%(id)s.%(ext)s"),
+                "outtmpl": os.path.join(_CACHE_DIR, f"{video_id}.%(ext)s"),
                 "skip_download": False,
                 "overwrites": True,
                 "retries": 3,
                 "extractor_retries": 2,
             }
+            # Fresh residential IP per attempt so a flagged exit node doesn't
+            # kill the retry.
+            proxy = _pick_proxy()
+            if proxy:
+                opts["proxy"] = proxy
             try:
                 with _ydl(opts) as ydl:
                     ydl.download([url])
-                if os.path.exists(path) and os.path.getsize(path) > 0:
-                    return path
+                # The real extension (.m4a/.mp4) varies; normalize to .mp4 so
+                # the cache key + audio/mp4 content-type are stable.
+                got = _normalize_cache(video_id, path)
+                if got:
+                    return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
             # brief backoff before the next client attempt
