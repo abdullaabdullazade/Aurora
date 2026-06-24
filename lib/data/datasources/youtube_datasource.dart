@@ -16,10 +16,24 @@ class YoutubeDatasource {
         .toList(growable: false);
   }
 
-  /// Highest-bitrate audio-only stream URL — used for playback + .m4a export.
+  /// Resolves an audio-only stream URL for playback / .m4a export.
+  ///
+  /// Uses the ANDROID client and prefers the MP4 (m4a / itag 140) stream:
+  /// that combination is playable by ExoPlayer with no special User-Agent
+  /// (verified HTTP 206), whereas the default webm/opus + browser UA returns
+  /// HTTP 403 from the YouTube CDN.
   Future<Uri> audioStreamUrl(String videoId) async {
-    final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-    return manifest.audioOnly.withHighestBitrate().url;
+    final manifest = await _yt.videos.streamsClient.getManifest(
+      videoId,
+      ytClients: [YoutubeApiClient.android],
+    );
+    final audios = manifest.audioOnly;
+    final mp4 = audios
+        .where((a) => a.codec.mimeType.contains('mp4'))
+        .toList(growable: false);
+    final pool = mp4.isNotEmpty ? mp4 : audios.toList();
+    pool.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+    return pool.first.url;
   }
 
   Track _toTrack(Video v) => Track(

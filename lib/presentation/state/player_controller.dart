@@ -19,6 +19,7 @@ class PlayerState {
   final Duration duration; // real stream duration once known
   final bool shuffle;
   final LoopMode repeat;
+  final String? error;
 
   const PlayerState({
     this.queue = const [],
@@ -29,6 +30,7 @@ class PlayerState {
     this.duration = Duration.zero,
     this.shuffle = false,
     this.repeat = LoopMode.off,
+    this.error,
   });
 
   Track? get current =>
@@ -54,6 +56,7 @@ class PlayerState {
     Duration? duration,
     bool? shuffle,
     LoopMode? repeat,
+    String? error,
   }) =>
       PlayerState(
         queue: queue ?? this.queue,
@@ -64,6 +67,7 @@ class PlayerState {
         duration: duration ?? this.duration,
         shuffle: shuffle ?? this.shuffle,
         repeat: repeat ?? this.repeat,
+        error: error,
       );
 }
 
@@ -185,12 +189,26 @@ class PlayerController extends Notifier<PlayerState> {
     try {
       final uri = await ref.read(musicRepositoryProvider).resolveStream(track);
       if (token != _loadToken) return; // superseded by a newer load
-      await _player.setAudioSource(AudioSource.uri(uri));
+      debugPrint('[player] resolved stream for "${track.title}"');
+      // ExoPlayer's default `Accept-Encoding: gzip` makes the YouTube CDN
+      // return 403 on these (already-compressed) range requests; force
+      // `identity` and use the matching ANDROID-client User-Agent.
+      await _player.setAudioSource(
+        AudioSource.uri(uri, headers: const {
+          'Accept-Encoding': 'identity',
+          'User-Agent':
+              'com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip',
+        }),
+      );
+      if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) await _player.play();
       _applyPalette(track, token); // fire-and-forget
-    } catch (_) {
-      if (token == _loadToken) state = state.copyWith(isLoading: false);
+    } catch (e, st) {
+      debugPrint('[player] load failed for "${track.title}": $e\n$st');
+      if (token == _loadToken) {
+        state = state.copyWith(isLoading: false, error: 'Playback failed');
+      }
     }
   }
 
