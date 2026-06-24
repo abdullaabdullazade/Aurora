@@ -101,7 +101,19 @@ def _ydl(opts: dict[str, Any]) -> yt_dlp.YoutubeDL:
     }
     cf = _cookiefile()
     if cf:
-        base["cookiefile"] = cf
+        # yt-dlp saves the (possibly rotated/expired) cookiejar BACK to the
+        # cookiefile after each run, which degrades the master over time until
+        # it loses the auth cookies and hits the bot wall. Hand it a throwaway
+        # copy per request so the master cookies.txt stays pristine.
+        import shutil
+        import tempfile
+        fd, tmp = tempfile.mkstemp(prefix="ytck_", suffix=".txt")
+        os.close(fd)
+        try:
+            shutil.copyfile(cf, tmp)
+            base["cookiefile"] = tmp
+        except Exception:  # noqa: BLE001
+            base["cookiefile"] = cf
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
 
@@ -247,26 +259,39 @@ def _ensure_local(video_id: str) -> str:
             if time.time() - os.path.getmtime(path) < _CACHE_TTL:
                 return path
         os.makedirs(_CACHE_DIR, exist_ok=True)
-        opts = {
-            "format": "bestaudio/best",
-            # web client + bgutil PO-token passes the datacenter bot/login wall.
-            "extractor_args": {"youtube": {"player_client": ["web"]}},
-            # nsig/signature need a JS runtime (deno) + EJS solver scripts;
-            # yt-dlp fetches+caches them on first use.
-            "remote_components": ["ejs:github"],
-            "outtmpl": os.path.join(_CACHE_DIR, "%(id)s.%(ext)s"),
-            "skip_download": False,
-            # avoid the extractor's mandatory ~5s throttle sleep.
-            "sleep_interval": 0,
-            "max_sleep_interval": 0,
-            "sleep_interval_requests": 0,
-            "overwrites": True,
-        }
-        with _ydl(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        # Rotate player clients across retries: a bot-wall on one client/attempt
+        # is often transient, and a different client sometimes slips through.
+        # NB: do NOT zero the sleep intervals — YouTube's pacing is anti-bot;
+        # hammering a datacenter IP with no delay gets it rate-limited fast.
+        clients = [["web"], ["web_safari"], ["mweb"]]
+        last_err: Exception | None = None
+        for attempt, client in enumerate(clients):
+            opts = {
+                "format": "bestaudio/best",
+                # web client + bgutil PO-token passes the datacenter bot/login
+                # wall; nsig/signature solved via deno + EJS (fetched once).
+                "extractor_args": {"youtube": {"player_client": client}},
+                "remote_components": ["ejs:github"],
+                "outtmpl": os.path.join(_CACHE_DIR, "%(id)s.%(ext)s"),
+                "skip_download": False,
+                "overwrites": True,
+                "retries": 3,
+                "extractor_retries": 2,
+            }
+            try:
+                with _ydl(opts) as ydl:
+                    ydl.download([url])
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    return path
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+            # brief backoff before the next client attempt
+            if attempt < len(clients) - 1:
+                time.sleep(1.5)
 
     if not (os.path.exists(path) and os.path.getsize(path) > 0):
-        raise HTTPException(404, "no audio stream")
+        raise HTTPException(404, f"no audio stream: {last_err}")
     return path
 
 
