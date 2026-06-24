@@ -82,12 +82,11 @@ Future<List<Track>> _queryOnce() {
 
 /// Returns all audio tracks; UI groups + filters by folder.
 final deviceSongsProvider = FutureProvider<List<Track>>((ref) async {
+  // Gate on the OS permission only (permission_handler). The plugin's own
+  // permissionsStatus() is unreliable — it can report denied even after the
+  // user grants, which caused an endless re-prompt loop.
   final granted = await ref.watch(audioPermissionProvider.future);
   if (!granted) throw const _PermissionDenied();
-  // Double-gate: on_audio_query crashes ("Reply already submitted") if its
-  // query runs while the plugin itself reports no library access. Only query
-  // when the plugin confirms access.
-  if (!await _audioQuery.permissionsStatus()) throw const _PermissionDenied();
   return _queryOnce();
 });
 
