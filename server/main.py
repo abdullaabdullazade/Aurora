@@ -16,6 +16,7 @@ Android emulator reaches the host at http://10.0.2.2:8000
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -40,6 +41,32 @@ def _ydl(opts: dict[str, Any]) -> yt_dlp.YoutubeDL:
     }
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
+
+
+# Strip common YouTube title noise so lyric lookups match real songs.
+def _clean(title: str) -> str:
+    t = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", title)
+    t = re.sub(
+        r"(?i)\b(official|video|audio|lyrics?|music|hd|4k|mv|visualizer|"
+        r"remaster(ed)?|feat\.?|ft\.?).*$",
+        " ",
+        t,
+    )
+    return re.sub(r"\s+", " ", t).strip(" -–—")
+
+
+def _parse_lrc(lrc: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for line in lrc.splitlines():
+        m = re.match(r"\[(\d+):(\d+)(?:\.(\d+))?\](.*)", line)
+        if not m:
+            continue
+        mm, ss, cs, text = m.groups()
+        t = int(mm) * 60 + int(ss) + (int(cs) / 100 if cs else 0)
+        text = text.strip()
+        if text:
+            out.append({"time": round(t, 2), "text": text})
+    return out
 
 
 @app.get("/health")
@@ -76,6 +103,49 @@ def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
             "views": int(e.get("view_count") or 0),
         })
     return out
+
+
+@app.get("/lyrics")
+def lyrics(title: str, artist: str = "", duration: int = 0) -> dict[str, Any]:
+    """Real lyrics from lrclib.net (synced LRC when available, else plain)."""
+    name = _clean(title)
+    with httpx.Client(timeout=12, follow_redirects=True) as cx:
+        hit: dict[str, Any] | None = None
+        # 1) exact get (best for synced + correct match)
+        if artist:
+            try:
+                r = cx.get("https://lrclib.net/api/get", params={
+                    "track_name": name,
+                    "artist_name": artist,
+                    "duration": duration,
+                })
+                if r.status_code == 200:
+                    hit = r.json()
+            except Exception:  # noqa: BLE001
+                hit = None
+        # 2) fuzzy search fallback
+        if not hit:
+            try:
+                q = f"{name} {artist}".strip()
+                r = cx.get("https://lrclib.net/api/search",
+                           params={"q": q})
+                arr = r.json() if r.status_code == 200 else []
+                # prefer a result that actually has synced lyrics
+                arr.sort(key=lambda x: 0 if x.get("syncedLyrics") else 1)
+                hit = arr[0] if arr else None
+            except Exception:  # noqa: BLE001
+                hit = None
+
+    if not hit:
+        return {"synced": [], "plain": "", "source": "lrclib", "found": False}
+
+    synced = _parse_lrc(hit.get("syncedLyrics") or "")
+    return {
+        "synced": synced,
+        "plain": hit.get("plainLyrics") or "",
+        "found": bool(synced or hit.get("plainLyrics")),
+        "source": "lrclib",
+    }
 
 
 def _resolve(video_id: str) -> tuple[str, dict[str, str]]:
