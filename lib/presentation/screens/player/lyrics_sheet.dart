@@ -19,6 +19,7 @@ class LyricsSheet extends ConsumerStatefulWidget {
 class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   final _scroll = ScrollController();
   int _active = -1;
+  DateTime? _userScrolledAt; // suspend auto-scroll after a manual scroll
 
   @override
   void dispose() {
@@ -28,6 +29,12 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
 
   void _autoScroll(int index, int count) {
     if (!_scroll.hasClients || index < 0) return;
+    // Don't yank the view while the user is reading/scrolling manually.
+    final last = _userScrolledAt;
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(seconds: 6)) {
+      return;
+    }
     // Roughly center the active line.
     final target = (index * 46.0) - 160;
     final max = _scroll.position.maxScrollExtent;
@@ -109,7 +116,15 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                     WidgetsBinding.instance.addPostFrameCallback(
                         (_) => _autoScroll(active, r.synced.length));
                   }
-                  return ListView.builder(
+                  return NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      if (n is ScrollStartNotification &&
+                          n.dragDetails != null) {
+                        _userScrolledAt = DateTime.now();
+                      }
+                      return false;
+                    },
+                    child: ListView.builder(
                     controller: _scroll,
                     padding:
                         const EdgeInsets.fromLTRB(Sp.xl, 0, Sp.xl, Sp.xxxl),
@@ -147,6 +162,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                         ),
                       );
                     },
+                    ),
                   );
                 },
               ),
