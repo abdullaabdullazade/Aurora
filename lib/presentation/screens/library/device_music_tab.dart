@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
@@ -196,6 +197,13 @@ class _PermissionGate extends StatelessWidget {
                   foregroundColor: Colors.black),
               onPressed: onGrant,
               child: const Text('Grant access'),
+            ),
+            const SizedBox(height: Sp.sm),
+            TextButton(
+              onPressed: () => openAppSettings(),
+              child: Text('Open settings',
+                  style: text.labelLarge
+                      ?.copyWith(color: AppColors.textSecondary)),
             ),
           ],
         ),

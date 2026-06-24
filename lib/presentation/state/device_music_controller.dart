@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:on_audio_query_pluse/on_audio_query.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -40,9 +41,14 @@ Track _toTrack(SongModel s) => Track(
 /// Scans the device library (requests permission on first use).
 /// Returns all audio tracks; UI groups + filters by folder.
 final deviceSongsProvider = FutureProvider<List<Track>>((ref) async {
-  var granted = await _audioQuery.permissionsStatus();
-  if (!granted) granted = await _audioQuery.permissionsRequest();
-  if (!granted) throw const _PermissionDenied();
+  // Use permission_handler (reliable) instead of on_audio_query's own check,
+  // which sometimes reports denied even right after the user grants access.
+  var st = await Permission.audio.request(); // Android 13+ READ_MEDIA_AUDIO
+  if (!st.isGranted) {
+    final storage = await Permission.storage.request(); // <= Android 12
+    if (storage.isGranted) st = storage;
+  }
+  if (!st.isGranted) throw const _PermissionDenied();
 
   final songs = await _audioQuery.querySongs(
     sortType: SongSortType.DATE_ADDED,
