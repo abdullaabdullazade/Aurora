@@ -6,8 +6,10 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/track.dart';
 import '../state/connectivity_controller.dart';
+import '../state/player_controller.dart';
 import '../screens/library/track_context_sheet.dart';
 import 'artwork.dart';
+import 'now_playing_bars.dart';
 
 /// Horizontal row used in lists/queues. Highlights when [active]. Offline,
 /// non-downloaded rows fade to 40% and stop responding to taps.
@@ -54,7 +56,28 @@ class TrackTile extends ConsumerWidget {
           child: Row(
             children: [
               leading ??
-                  Artwork(track: track, size: 52, radius: Radii.rSm),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Artwork(track: track, size: 52, radius: Radii.rSm),
+                      if (active)
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            borderRadius: Radii.rSm,
+                            color: Colors.black.withValues(alpha: 0.45),
+                          ),
+                          child: Center(
+                            child: NowPlayingBars(
+                              color: AppColors.accentBright,
+                              playing: ref.watch(playerControllerProvider
+                                  .select((s) => s.isPlaying)),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
               const SizedBox(width: Sp.md),
               Expanded(
                 child: Column(
