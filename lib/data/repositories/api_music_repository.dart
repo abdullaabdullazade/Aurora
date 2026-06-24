@@ -30,6 +30,9 @@ class ApiMusicRepository implements MusicRepository {
       duration: Duration(seconds: (j['duration'] as num?)?.toInt() ?? 0),
       plays: (j['views'] as num?)?.toInt() ?? 0,
       accent: Track.accentFor(id),
+      channelUrl: (j['channelUrl'] as String?)?.isNotEmpty == true
+          ? j['channelUrl'] as String
+          : null,
     );
   }
 

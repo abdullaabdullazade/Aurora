@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../state/connectivity_controller.dart';
+import '../../state/favorites_controller.dart';
 import '../../state/providers.dart';
 import '../../widgets/aurora_refresh.dart';
 import '../../widgets/glass.dart';
@@ -57,7 +58,7 @@ class HomeScreen extends ConsumerWidget {
                 icon: const Icon(Icons.search_rounded),
               ),
               IconButton(
-                onPressed: () => _showNotifications(context),
+                onPressed: () => _showNotifications(context, ref),
                 icon: const Icon(Icons.notifications_none_rounded),
               ),
               Padding(
@@ -106,15 +107,22 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-void _showNotifications(BuildContext context) {
+void _showNotifications(BuildContext context, WidgetRef ref) {
   final text = Theme.of(context).textTheme;
-  final items = [
-    (Icons.auto_awesome_rounded, 'Your daily mix is ready',
-        'Fresh picks for your afternoon'),
-    (Icons.local_fire_department_rounded, 'Top Charts updated',
-        'See what’s trending right now'),
-    (Icons.bedtime_rounded, 'Wind-down reminder',
-        'Set a sleep timer tonight'),
+  // Build from real state, not random placeholders.
+  final recents = ref.read(recentlyPlayedProvider).valueOrNull ?? const [];
+  final likedCount = ref.read(favoritesProvider).length;
+  final items = <(IconData, String, String)>[
+    if (recents.isNotEmpty)
+      (Icons.history_rounded, 'Continue listening',
+          'Pick up “${recents.first.title}”'),
+    if (likedCount > 0)
+      (Icons.favorite_rounded, 'Liked Songs',
+          'You have $likedCount liked ${likedCount == 1 ? 'song' : 'songs'}'),
+    (Icons.local_fire_department_rounded, 'Top Charts',
+        'See what’s trending today'),
+    (Icons.bedtime_rounded, 'Daily reminders on',
+        'Mix at 12:30 · wind-down at 20:00'),
   ];
   showModalBottomSheet(
     context: context,

@@ -16,6 +16,9 @@ class Track {
   /// Null while streaming-only; set once downloaded to disk.
   final String? localPath;
 
+  /// Uploader/channel page on YouTube (when known from the resolver).
+  final String? channelUrl;
+
   const Track({
     required this.id,
     required this.title,
@@ -25,6 +28,7 @@ class Track {
     this.plays = 0,
     this.accent = const Color(0xFF1DB954),
     this.localPath,
+    this.channelUrl,
   });
 
   bool get isDownloaded => localPath != null;
@@ -38,6 +42,7 @@ class Track {
         plays: plays,
         accent: accent ?? this.accent,
         localPath: localPath ?? this.localPath,
+        channelUrl: channelUrl,
       );
 
   Map<String, dynamic> toJson() => {
@@ -49,6 +54,7 @@ class Track {
         'plays': plays,
         'accent': accent.toARGB32(),
         'localPath': localPath,
+        'channelUrl': channelUrl,
       };
 
   factory Track.fromJson(Map<dynamic, dynamic> j) => Track(
@@ -60,6 +66,7 @@ class Track {
         plays: (j['plays'] as num?)?.toInt() ?? 0,
         accent: Color((j['accent'] as num?)?.toInt() ?? 0xFF1DB954),
         localPath: j['localPath'] as String?,
+        channelUrl: j['channelUrl'] as String?,
       );
 
   /// Deterministic vibrant accent derived from the id — gives every YouTube

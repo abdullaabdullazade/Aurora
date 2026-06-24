@@ -13,8 +13,12 @@ import '../../widgets/track_tile.dart';
 class ArtistDetailScreen extends ConsumerWidget {
   final String artist;
   final Color accent;
+  final String? channelUrl;
   const ArtistDetailScreen(
-      {super.key, required this.artist, this.accent = AppColors.accent});
+      {super.key,
+      required this.artist,
+      this.accent = AppColors.accent,
+      this.channelUrl});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,7 +90,8 @@ class ArtistDetailScreen extends ConsumerWidget {
                             shape: const StadiumBorder(),
                           ),
                           onPressed: () {
-                            final uri = Uri.parse(
+                            // Real channel page when known, else a search.
+                            final uri = Uri.parse(channelUrl ??
                                 'https://www.youtube.com/results?search_query=${Uri.encodeComponent(artist)}');
                             launchUrl(uri,
                                 mode: LaunchMode.externalApplication);

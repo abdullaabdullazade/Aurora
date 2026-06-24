@@ -101,6 +101,7 @@ def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
             "duration": int(e.get("duration") or 0),
             "thumbnail": thumb,
             "views": int(e.get("view_count") or 0),
+            "channelUrl": e.get("channel_url") or e.get("uploader_url"),
         })
     return out
 
