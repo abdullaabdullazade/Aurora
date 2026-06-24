@@ -12,6 +12,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/waveform_seeker.dart';
 import '../../state/player_controller.dart';
 import '../../state/favorites_controller.dart';
+import '../artist/artist_detail_screen.dart';
 import '../library/add_to_playlist_sheet.dart';
 import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
@@ -92,6 +93,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
               child: Column(
                 children: [
                   const _TopBar(source: 'From your search'),
+                  const SizedBox(height: Sp.sm),
+                  const Align(
+                      alignment: Alignment.centerRight, child: _OutputChip()),
                   // Artwork takes the flexible upper space, centered + floating.
                   Expanded(
                     child: Center(
@@ -155,16 +159,16 @@ class _FloatingArt extends StatelessWidget {
       tag: 'art_${track.id}',
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(32),
           boxShadow: [
             // soft ambient shadow + artwork-colored glow
             const BoxShadow(
-                color: Color(0x66000000), blurRadius: 40, offset: Offset(0, 22)),
+                color: Color(0x66000000), blurRadius: 44, offset: Offset(0, 24)),
             BoxShadow(
-              color: track.accent.withValues(alpha: 0.45),
-              blurRadius: 60,
-              spreadRadius: -12,
-              offset: const Offset(0, 10),
+              color: track.accent.withValues(alpha: 0.5),
+              blurRadius: 70,
+              spreadRadius: -14,
+              offset: const Offset(0, 12),
             ),
           ],
         ),
@@ -174,14 +178,14 @@ class _FloatingArt extends StatelessWidget {
             Artwork(
               track: track,
               size: size,
-              radius: BorderRadius.circular(24),
+              radius: BorderRadius.circular(32),
             ),
             if (loading)
               Container(
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(32),
                   color: Colors.black.withValues(alpha: 0.32),
                 ),
                 child: const Center(
@@ -191,6 +195,30 @@ class _FloatingArt extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OutputChip extends StatelessWidget {
+  const _OutputChip();
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: Radii.rPill,
+      blur: 18,
+      opacity: 0.10,
+      padding: const EdgeInsets.symmetric(horizontal: Sp.md, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.speaker_rounded,
+              size: 14, color: AppColors.accentBright),
+          const SizedBox(width: Sp.sm),
+          Text('Output: Device Speakers',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.textSecondary)),
+        ],
       ),
     );
   }
@@ -220,14 +248,20 @@ class _SongInfo extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                track.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ArtistDetailScreen(
+                      artist: track.artist, accent: track.accent),
+                )),
+                child: Text(
+                  track.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
               const SizedBox(height: 3),
