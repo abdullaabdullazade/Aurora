@@ -39,6 +39,7 @@ abstract final class AppTheme {
         overlayShape: RoundSliderOverlayShape(overlayRadius: 16),
       ),
       iconTheme: const IconThemeData(color: AppColors.textPrimary, size: 24),
+      snackBarTheme: _snackBar(),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.glassFill,
         side: const BorderSide(color: AppColors.glassStroke),
@@ -77,12 +78,28 @@ abstract final class AppTheme {
       splashColor: AppColors.accentSoft,
       highlightColor: Colors.transparent,
       iconTheme: const IconThemeData(color: lightInk, size: 24),
+      snackBarTheme: _snackBar(),
       pageTransitionsTheme: const PageTransitionsTheme(builders: {
         TargetPlatform.android: _FadeUpTransitionBuilder(),
         TargetPlatform.iOS: _FadeUpTransitionBuilder(),
       }),
     );
   }
+
+  // Shared toast style. A dark pill with white text stays readable in both
+  // light and dark mode — without an explicit content color the text defaults
+  // to a dark on-inverse-surface color and vanishes on the dark background.
+  static SnackBarThemeData _snackBar() => SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.elevated,
+        contentTextStyle: AppType.build().bodyMedium?.copyWith(
+              color: AppColors.textPrimary,
+            ),
+        actionTextColor: AppColors.accentBright,
+        elevation: 8,
+        insetPadding: const EdgeInsets.all(Sp.lg),
+        shape: const RoundedRectangleBorder(borderRadius: Radii.rPill),
+      );
 }
 
 /// Soft fade-through + subtle upward slide for route pushes.
