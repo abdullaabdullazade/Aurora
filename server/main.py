@@ -72,6 +72,23 @@ _stream_cache: dict[str, tuple[float, str, dict[str, str]]] = {}
 _CACHE_TTL = 60 * 30  # 30 min (well under googlevideo expiry)
 
 
+def _cookiefile() -> str | None:
+    """Write YouTube cookies (base64 in YT_COOKIES_B64 env) to /tmp so yt-dlp
+    can bypass the datacenter "confirm you're not a bot" check on Vercel."""
+    b64 = os.environ.get("YT_COOKIES_B64")
+    if not b64:
+        return None
+    path = "/tmp/yt_cookies.txt"
+    if not os.path.exists(path):
+        import base64
+        try:
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(b64))
+        except Exception:  # noqa: BLE001
+            return None
+    return path
+
+
 def _ydl(opts: dict[str, Any]) -> yt_dlp.YoutubeDL:
     base = {
         "quiet": True,
@@ -79,6 +96,9 @@ def _ydl(opts: dict[str, Any]) -> yt_dlp.YoutubeDL:
         "skip_download": True,
         "noplaylist": True,
     }
+    cf = _cookiefile()
+    if cf:
+        base["cookiefile"] = cf
     base.update(opts)
     return yt_dlp.YoutubeDL(base)
 
@@ -194,14 +214,37 @@ def _resolve(video_id: str) -> tuple[str, dict[str, str]]:
     if cached and cached[0] > time.time():
         return cached[1], cached[2]
 
-    opts = {"format": "bestaudio[ext=m4a]/bestaudio/best"}
+    opts = {
+        "format": "bestaudio/best",
+        # android/web clients return clean progressive audio formats and avoid
+        # SABR/po-token-only streams that yield "format not available".
+        "extractor_args": {
+            "youtube": {"player_client": ["tv", "ios", "mweb", "web"]}
+        },
+    }
     with _ydl(opts) as ydl:
         info = ydl.extract_info(
             f"https://www.youtube.com/watch?v={video_id}", download=False
         )
+
     url = info.get("url")
     if not url:
+        rd = info.get("requested_downloads") or []
+        if rd:
+            url = rd[0].get("url")
+    if not url:
+        # Fallback: pick the highest-bitrate audio format manually.
+        auds = [
+            f for f in (info.get("formats") or [])
+            if f.get("url") and f.get("acodec") not in (None, "none")
+            and f.get("vcodec") in (None, "none")
+        ]
+        auds.sort(key=lambda f: f.get("abr") or 0)
+        if auds:
+            url = auds[-1]["url"]
+    if not url:
         raise HTTPException(404, "no audio stream")
+
     headers = info.get("http_headers") or {}
     _stream_cache[video_id] = (time.time() + _CACHE_TTL, url, headers)
     return url, headers
