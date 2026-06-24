@@ -20,6 +20,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   final _scroll = ScrollController();
   int _active = -1;
   DateTime? _userScrolledAt; // suspend auto-scroll after a manual scroll
+  bool _firstScroll = true; // first jump (on open) is instant
 
   @override
   void dispose() {
@@ -38,11 +39,15 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
     // Roughly center the active line.
     final target = (index * 46.0) - 160;
     final max = _scroll.position.maxScrollExtent;
-    _scroll.animateTo(
-      target.clamp(0.0, max),
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-    );
+    final to = target.clamp(0.0, max);
+    if (_firstScroll) {
+      _firstScroll = false;
+      _scroll.jumpTo(to); // open straight at the current line
+    } else {
+      _scroll.animateTo(to,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic);
+    }
   }
 
   @override

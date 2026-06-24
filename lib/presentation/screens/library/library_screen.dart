@@ -18,6 +18,33 @@ import 'device_music_tab.dart';
 import 'favorites_screen.dart';
 import 'playlist_detail_screen.dart';
 
+/// Shared confirm dialog. Returns true if the user confirms.
+Future<bool> confirmDialog(BuildContext context,
+    {required String title, required String message}) async {
+  final res = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.elevated,
+      shape: const RoundedRectangleBorder(borderRadius: Radii.rLg),
+      title: Text(title,
+          style: const TextStyle(color: AppColors.textPrimary)),
+      content: Text(message,
+          style: const TextStyle(color: AppColors.textSecondary)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  return res ?? false;
+}
+
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
   @override
@@ -295,8 +322,13 @@ class _PlaylistRow extends StatelessWidget {
               color: AppColors.elevated,
               icon: const Icon(Icons.more_vert_rounded,
                   color: AppColors.textSecondary),
-              onSelected: (v) {
-                if (v == 'delete') onDelete();
+              onSelected: (v) async {
+                if (v == 'delete' &&
+                    await confirmDialog(context,
+                        title: 'Delete playlist?',
+                        message: '“${playlist.name}” will be deleted.')) {
+                  onDelete();
+                }
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
@@ -382,6 +414,11 @@ class _DownloadedTab extends ConsumerWidget {
                         color: AppColors.textSecondary),
                     onPressed: () async {
                       final t = tracks[i];
+                      final ok = await confirmDialog(context,
+                          title: 'Delete download?',
+                          message: '“${t.title}” will be removed from your '
+                              'device.');
+                      if (!ok) return;
                       if (t.localPath != null) {
                         try {
                           final f = File(t.localPath!);

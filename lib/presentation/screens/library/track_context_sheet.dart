@@ -122,11 +122,29 @@ class TrackContextSheet extends ConsumerWidget {
                   ref
                       .read(downloadControllerProvider.notifier)
                       .download(track);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    backgroundColor: AppColors.elevated,
-                    content: Text('Downloading “${track.title}”…'),
-                  ));
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: AppColors.elevated,
+                      elevation: 8,
+                      margin: const EdgeInsets.all(Sp.lg),
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: Radii.rPill),
+                      duration: const Duration(seconds: 2),
+                      content: Row(
+                        children: [
+                          const Icon(Icons.downloading_rounded,
+                              color: AppColors.accentBright, size: 20),
+                          const SizedBox(width: Sp.md),
+                          Expanded(
+                            child: Text('Downloading “${track.title}”',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ));
                 },
               ),
             _Item(

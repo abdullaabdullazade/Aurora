@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
-import '../state/player_controller.dart';
 import '../state/providers.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/frosted_nav_bar.dart';
@@ -30,15 +29,14 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(navIndexProvider);
-    // Ambient color follows the current track for a cohesive vibe.
-    final seed = ref.watch(playerControllerProvider).current?.accent ??
-        AppColors.accent;
 
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.transparent,
       body: AmbientBackground(
-        seed: seed,
+        // Constant, subtle brand tint on browse screens — track-colored blobs
+        // bleeding under the header looked messy. The player has its own veil.
+        seed: AppColors.accent,
         child: Stack(
           children: [
             // Keep all tabs alive (no rebuild/refetch) for instant, smooth
