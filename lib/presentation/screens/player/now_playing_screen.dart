@@ -95,8 +95,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                 children: [
                   const _TopBar(source: 'From your search'),
                   const SizedBox(height: Sp.sm),
-                  const Align(
-                      alignment: Alignment.centerRight, child: _OutputChip()),
+                  const Row(
+                    children: [
+                      _SpeedChip(),
+                      Spacer(),
+                      _OutputChip(),
+                    ],
+                  ),
                   // Artwork takes the flexible upper space, centered + floating.
                   Expanded(
                     child: Center(
@@ -194,6 +199,40 @@ class _FloatingArt extends StatelessWidget {
                       color: AppColors.accentBright),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpeedChip extends ConsumerWidget {
+  const _SpeedChip();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final speed = ref.watch(playerControllerProvider.select((s) => s.speed));
+    final label = speed == speed.roundToDouble()
+        ? '${speed.toInt()}x'
+        : '${speed}x';
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(playerControllerProvider.notifier).cycleSpeed();
+      },
+      child: Glass(
+        radius: Radii.rPill,
+        blur: 18,
+        opacity: 0.10,
+        padding: const EdgeInsets.symmetric(horizontal: Sp.md, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.speed_rounded,
+                size: 14, color: AppColors.accentBright),
+            const SizedBox(width: Sp.sm),
+            Text(label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary)),
           ],
         ),
       ),
@@ -312,7 +351,9 @@ class _SongInfo extends StatelessWidget {
               GestureDetector(
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => ArtistDetailScreen(
-                      artist: track.artist, accent: track.accent),
+                      artist: track.artist,
+                      accent: track.accent,
+                      channelUrl: track.channelUrl),
                 )),
                 child: Text(
                   track.artist,
