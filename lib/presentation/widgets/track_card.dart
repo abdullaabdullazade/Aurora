@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/track.dart';
+import '../state/connectivity_controller.dart';
 import 'artwork.dart';
 
 /// Vertical card for horizontal carousels. Scales down on press for tactility.
-class TrackCard extends StatefulWidget {
+/// When offline, non-downloaded tracks fade to 40% and become unclickable.
+class TrackCard extends ConsumerStatefulWidget {
   final Track track;
   final double size;
   final VoidCallback onTap;
@@ -19,29 +22,36 @@ class TrackCard extends StatefulWidget {
   });
 
   @override
-  State<TrackCard> createState() => _TrackCardState();
+  ConsumerState<TrackCard> createState() => _TrackCardState();
 }
 
-class _TrackCardState extends State<TrackCard> {
+class _TrackCardState extends ConsumerState<TrackCard> {
   double _scale = 1;
   void _set(double v) => setState(() => _scale = v);
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    return GestureDetector(
-      onTapDown: (_) => _set(0.95),
-      onTapCancel: () => _set(1),
-      onTapUp: (_) => _set(1),
-      onTap: () {
-        HapticFeedback.lightImpact();
-        widget.onTap();
-      },
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOut,
-        child: SizedBox(
+    final offline = !ref.watch(isOnlineProvider);
+    final disabled = offline && !widget.track.isDownloaded;
+    return IgnorePointer(
+      ignoring: disabled,
+      child: AnimatedOpacity(
+        opacity: disabled ? 0.4 : 1,
+        duration: const Duration(milliseconds: 400),
+        child: GestureDetector(
+          onTapDown: (_) => _set(0.95),
+          onTapCancel: () => _set(1),
+          onTapUp: (_) => _set(1),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            widget.onTap();
+          },
+          child: AnimatedScale(
+            scale: _scale,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            child: SizedBox(
           width: widget.size,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,6 +94,8 @@ class _TrackCardState extends State<TrackCard> {
                 ],
               ),
             ],
+          ),
+            ),
           ),
         ),
       ),

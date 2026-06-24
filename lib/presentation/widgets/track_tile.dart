@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/track.dart';
+import '../state/connectivity_controller.dart';
 import 'artwork.dart';
 
-/// Horizontal row used in lists/queues. Highlights when [active].
-class TrackTile extends StatelessWidget {
+/// Horizontal row used in lists/queues. Highlights when [active]. Offline,
+/// non-downloaded rows fade to 40% and stop responding to taps.
+class TrackTile extends ConsumerWidget {
   final Track track;
   final bool active;
   final VoidCallback onTap;
@@ -24,11 +27,17 @@ class TrackTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    final disabled = !ref.watch(isOnlineProvider) && !track.isDownloaded;
+    return IgnorePointer(
+      ignoring: disabled,
+      child: AnimatedOpacity(
+        opacity: disabled ? 0.4 : 1,
+        duration: const Duration(milliseconds: 400),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
         borderRadius: Radii.rMd,
         onTap: () {
           HapticFeedback.selectionClick();
@@ -83,6 +92,8 @@ class TrackTile extends StatelessWidget {
                   Text(Fmt.duration(track.duration),
                       style: text.labelSmall),
             ],
+          ),
+        ),
           ),
         ),
       ),
