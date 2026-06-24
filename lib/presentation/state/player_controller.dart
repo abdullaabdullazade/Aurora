@@ -187,11 +187,18 @@ class PlayerController extends Notifier<PlayerState> {
     ref.invalidate(recentlyPlayedProvider);
 
     try {
-      final uri = await ref.read(musicRepositoryProvider).resolveStream(track);
+      final Uri uri;
+      if (track.localPath != null) {
+        // On-device file — play straight from disk, no network.
+        uri = Uri.file(track.localPath!);
+        debugPrint('[player] playing local file: ${track.localPath}');
+      } else {
+        uri = await ref.read(musicRepositoryProvider).resolveStream(track);
+        debugPrint('[player] streaming via proxy: $uri');
+      }
       if (token != _loadToken) return; // superseded by a newer load
-      debugPrint('[player] streaming via proxy: $uri');
-      // Audio is served by our resolver proxy (audio/mp4, range-supported),
-      // so no special CDN headers are required.
+      // Remote audio comes from our proxy (audio/mp4, range-supported), local
+      // audio from a file URI — both play with no special headers.
       await _player.setAudioSource(AudioSource.uri(uri));
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);

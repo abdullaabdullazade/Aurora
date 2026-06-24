@@ -28,6 +28,9 @@ dependencies:
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4
 
+  # On-device media library (MediaStore: songs, artwork, folders)
+  on_audio_query_pluse: ^2.9.4
+
   # Downloads (permission_handler kept; flutter_downloader added when wiring
   # the real download engine — it needs manifest + AGP setup, omitted from the
   # preview build to keep the demo runnable out of the box).

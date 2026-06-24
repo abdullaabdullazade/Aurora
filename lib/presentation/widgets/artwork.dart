@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:on_audio_query_pluse/on_audio_query.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/entities/track.dart';
 
@@ -38,14 +39,32 @@ class Artwork extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: radius,
-        child: CachedNetworkImage(
-          imageUrl: track.artworkUrl,
-          fit: BoxFit.cover,
-          fadeInDuration: const Duration(milliseconds: 350),
-          placeholder: (_, __) => _fallback(),
-          errorWidget: (_, __, ___) => _fallback(),
-        ),
+        child: _image(),
       ),
+    );
+  }
+
+  Widget _image() {
+    // Device tracks: embedded artwork via MediaStore id.
+    final localId = track.localPath != null ? int.tryParse(track.id) : null;
+    if (localId != null) {
+      return QueryArtworkWidget(
+        id: localId,
+        type: ArtworkType.AUDIO,
+        artworkWidth: size,
+        artworkHeight: size,
+        artworkFit: BoxFit.cover,
+        keepOldArtwork: true,
+        nullArtworkWidget: _fallback(),
+      );
+    }
+    if (track.artworkUrl.isEmpty) return _fallback();
+    return CachedNetworkImage(
+      imageUrl: track.artworkUrl,
+      fit: BoxFit.cover,
+      fadeInDuration: const Duration(milliseconds: 350),
+      placeholder: (_, __) => _fallback(),
+      errorWidget: (_, __, ___) => _fallback(),
     );
   }
 

@@ -9,6 +9,7 @@ class LocalStore {
   static const _recentsBox = 'recents';
   static const _downloadsBox = 'downloads';
   static const _favoritesBox = 'favorites';
+  static const _settingsBox = 'settings';
   static const _recentsKey = 'list';
   static const _maxRecents = 30;
 
@@ -16,6 +17,7 @@ class LocalStore {
   late final Box<dynamic> _recents;
   late final Box<dynamic> _downloads;
   late final Box<dynamic> _favorites;
+  late final Box<dynamic> _settings;
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -23,6 +25,7 @@ class LocalStore {
     _recents = await Hive.openBox(_recentsBox);
     _downloads = await Hive.openBox(_downloadsBox);
     _favorites = await Hive.openBox(_favoritesBox);
+    _settings = await Hive.openBox(_settingsBox);
   }
 
   // --- Favorites ---------------------------------------------------------
@@ -39,6 +42,17 @@ class LocalStore {
       await _favorites.put(t.id, t.toJson());
     }
   }
+
+  // --- Hidden device folders --------------------------------------------
+  static const _hiddenFoldersKey = 'hidden_folders';
+
+  Set<String> hiddenFolders() {
+    final raw = (_settings.get(_hiddenFoldersKey) as List?) ?? const [];
+    return raw.map((e) => e as String).toSet();
+  }
+
+  Future<void> setHiddenFolders(Set<String> folders) =>
+      _settings.put(_hiddenFoldersKey, folders.toList());
 
   // --- Playlists ---------------------------------------------------------
   List<Playlist> playlists() => _playlists.values

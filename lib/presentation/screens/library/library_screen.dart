@@ -11,6 +11,7 @@ import '../../state/providers.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
+import 'device_music_tab.dart';
 import 'playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -21,7 +22,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 4, vsync: this);
   String _filter = '';
 
   @override
@@ -62,6 +63,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             dividerColor: Colors.transparent,
             tabs: const [
               Tab(text: 'Playlists'),
+              Tab(text: 'On device'),
               Tab(text: 'Downloaded'),
               Tab(text: 'Queue'),
             ],
@@ -71,6 +73,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               controller: _tabs,
               children: [
                 _PlaylistsTab(onOpen: (id) => _open(context, id)),
+                const DeviceMusicTab(),
                 _DownloadedTab(
                   data: downloads,
                   filter: _filter,
