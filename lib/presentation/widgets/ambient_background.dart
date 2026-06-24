@@ -78,10 +78,11 @@ class _AmbientPainter extends CustomPainter {
   }
 
   void _blob(Canvas canvas, Offset center, double radius, Color color) {
+    // RadialGradient alone is soft enough — a per-frame MaskFilter.blur here
+    // was a major GPU cost and caused transition lag.
     final paint = Paint()
       ..shader = RadialGradient(colors: [color, color.withValues(alpha: 0)])
-          .createShader(Rect.fromCircle(center: center, radius: radius))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 60);
+          .createShader(Rect.fromCircle(center: center, radius: radius));
     canvas.drawCircle(center, radius, paint);
   }
 

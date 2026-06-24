@@ -117,8 +117,7 @@ class _PulsePainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = accent.withValues(alpha: 0.10 + 0.18 * intensity * breathe)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        ..color = accent.withValues(alpha: 0.10 + 0.18 * intensity * breathe),
     );
 
     // Orbiting particles.
@@ -131,9 +130,7 @@ class _PulsePainter extends CustomPainter {
       canvas.drawCircle(
         pos,
         p.sz * (active ? 1.0 : 0.7),
-        Paint()
-          ..color = accent.withValues(alpha: op.clamp(0.0, 0.7))
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        Paint()..color = accent.withValues(alpha: op.clamp(0.0, 0.7)),
       );
     }
   }
