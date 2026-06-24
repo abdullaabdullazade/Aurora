@@ -1,5 +1,14 @@
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// Opens the system audio-output picker (route to speaker / Bluetooth /
+/// headphones — works even while Bluetooth is connected).
+Future<void> openOutputPicker() async {
+  try {
+    await const MethodChannel('aurora/media').invokeMethod('openOutputPicker');
+  } catch (_) {}
+}
 
 enum OutputKind { speaker, headphones, bluetooth }
 

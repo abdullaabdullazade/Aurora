@@ -25,17 +25,39 @@ class MainActivity : AudioServiceActivity() {
         // crashes ("Reply already submitted"). Runs off the UI thread.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaChannel)
             .setMethodCallHandler { call, result ->
-                if (call.method != "querySongs") {
-                    result.notImplemented(); return@setMethodCallHandler
-                }
-                Thread {
-                    try {
-                        val songs = queryAudio()
-                        runOnUiThread { result.success(songs) }
-                    } catch (e: Exception) {
-                        runOnUiThread { result.error("QUERY_ERR", e.message, null) }
+                when (call.method) {
+                    "querySongs" -> Thread {
+                        try {
+                            val songs = queryAudio()
+                            runOnUiThread { result.success(songs) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("QUERY_ERR", e.message, null)
+                            }
+                        }
+                    }.start()
+                    // System output picker — lets the user route to phone
+                    // speaker / Bluetooth / headphones even while BT is on.
+                    "openOutputPicker" -> {
+                        try {
+                            val i = Intent("android.settings.panel.action.MEDIA_OUTPUT")
+                                .putExtra(
+                                    "com.android.settings.panel.extra.PACKAGE_NAME",
+                                    packageName,
+                                )
+                            startActivity(i)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
+                                result.success(true)
+                            } catch (e2: Exception) {
+                                result.success(false)
+                            }
+                        }
                     }
-                }.start()
+                    else -> result.notImplemented()
+                }
             }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)

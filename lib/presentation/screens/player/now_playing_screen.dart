@@ -276,14 +276,22 @@ class _OutputChip extends ConsumerWidget {
                 trailing:
                     const Icon(Icons.check_rounded, color: AppColors.accentBright),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(Sp.xl, 0, Sp.xl, Sp.lg),
-                child: Text(
-                  'Connect headphones or Bluetooth and audio switches '
-                  'automatically.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 11, color: AppColors.textTertiary),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.sm, Sp.lg, Sp.lg),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: Sp.md)),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      openOutputPicker();
+                    },
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    label: const Text('Switch output (speaker / Bluetooth)'),
+                  ),
                 ),
               ),
             ],
