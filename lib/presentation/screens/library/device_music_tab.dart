@@ -124,7 +124,7 @@ class _FolderCard extends StatelessWidget {
       opacity: hidden ? 0.45 : 1,
       child: GestureDetector(
         onTap: onTap,
-        child: Glass(
+        child: GlassTile(
           radius: Radii.rLg,
           padding: const EdgeInsets.all(Sp.md),
           child: Row(

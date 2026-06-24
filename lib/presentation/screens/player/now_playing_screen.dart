@@ -53,8 +53,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
       }
     });
 
-    final state = ref.watch(playerControllerProvider);
-    final track = state.current;
+    // Watch ONLY the current track here — position updates (4×/sec) must not
+    // rebuild the heavy blurred background. Dynamic bits use their own Consumer.
+    final track = ref.watch(playerControllerProvider.select((s) => s.current));
     if (track == null) return const SizedBox.shrink();
     final media = MediaQuery.of(context);
     final artSize = (media.size.width * 0.74).clamp(220.0, 360.0);
@@ -67,10 +68,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
           // Layered blurred-artwork background + dark gradient veil.
           RepaintBoundary(
             child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+              imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
               child: Artwork(
                 track: track,
-                size: media.size.width * 1.5,
+                size: media.size.width * 1.3,
                 radius: BorderRadius.zero,
               ),
             ),
@@ -112,16 +113,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                           offset: Offset(0, (_float.value - 0.5) * 14),
                           child: child,
                         ),
-                        child: AlbumPulse(
-                          accent: track.accent,
-                          active: state.isPlaying,
-                          size: artSize,
-                          child: _FloatingArt(
-                            track: track,
+                        // Only rebuilds on play/loading change, not per tick.
+                        child: Consumer(builder: (_, r, __) {
+                          final playing = r.watch(playerControllerProvider
+                              .select((s) => s.isPlaying));
+                          final loading = r.watch(playerControllerProvider
+                              .select((s) => s.isLoading));
+                          return AlbumPulse(
+                            accent: track.accent,
+                            active: playing,
                             size: artSize,
-                            loading: state.isLoading,
-                          ),
-                        ),
+                            child: _FloatingArt(
+                                track: track, size: artSize, loading: loading),
+                          );
+                        }),
                       ),
                     ),
                   ),
@@ -129,14 +134,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                   const SizedBox(height: 24), // artwork -> title
                   _SongInfo(track: track),
                   const SizedBox(height: 20), // title -> progress
-                  WaveformSeeker(
-                    progress: state.progress,
-                    position: state.position,
-                    total: state.total,
-                    accent: track.accent,
-                    onSeek: (f) =>
-                        ref.read(playerControllerProvider.notifier).seek(f),
-                  ),
+                  // Position-dependent: isolated so only the seek bar repaints.
+                  Consumer(builder: (_, r, __) {
+                    final s = r.watch(playerControllerProvider);
+                    return WaveformSeeker(
+                      progress: s.progress,
+                      position: s.position,
+                      total: s.total,
+                      accent: track.accent,
+                      onSeek: (f) =>
+                          ref.read(playerControllerProvider.notifier).seek(f),
+                    );
+                  }),
                   const SizedBox(height: 28), // progress -> controls
                   const _Controls(),
                   const SizedBox(height: 32), // controls -> bottom bar
@@ -495,10 +504,10 @@ class FavButton extends ConsumerWidget {
         child: Icon(
           liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           key: ValueKey(liked),
-          color: liked ? AppColors.accentBright : AppColors.textSecondary,
+          color: liked ? track.accent : AppColors.textSecondary,
           size: size,
           shadows: liked
-              ? [const Shadow(color: AppColors.accentBright, blurRadius: 16)]
+              ? [Shadow(color: track.accent, blurRadius: 16)]
               : null,
         ),
       ),

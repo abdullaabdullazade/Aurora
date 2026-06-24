@@ -45,3 +45,30 @@ class Glass extends StatelessWidget {
     );
   }
 }
+
+/// Cheap glass look WITHOUT BackdropFilter — for list items, where many real
+/// blurs tank scroll performance. Visually close (translucent fill + stroke).
+class GlassTile extends StatelessWidget {
+  final Widget child;
+  final BorderRadius radius;
+  final EdgeInsetsGeometry? padding;
+  const GlassTile({
+    super.key,
+    required this.child,
+    this.radius = Radii.rLg,
+    this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: const Color(0x14202024),
+        borderRadius: radius,
+        border: Border.all(color: AppColors.glassStroke, width: 1),
+      ),
+      child: child,
+    );
+  }
+}
