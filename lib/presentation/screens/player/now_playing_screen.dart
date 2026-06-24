@@ -12,6 +12,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/waveform_seeker.dart';
 import '../../state/player_controller.dart';
 import '../../state/favorites_controller.dart';
+import '../../state/output_controller.dart';
 import '../artist/artist_detail_screen.dart';
 import '../library/add_to_playlist_sheet.dart';
 import 'queue_sheet.dart';
@@ -200,25 +201,85 @@ class _FloatingArt extends StatelessWidget {
   }
 }
 
-class _OutputChip extends StatelessWidget {
+class _OutputChip extends ConsumerWidget {
   const _OutputChip();
+
+  void _sheet(BuildContext context, OutputDevice d) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Glass(
+        radius: const BorderRadius.vertical(top: Radii.xl),
+        blur: 30,
+        opacity: 0.16,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: Sp.md),
+              Container(
+                  width: 44,
+                  height: 4,
+                  decoration: const BoxDecoration(
+                      color: AppColors.glassStroke,
+                      borderRadius: Radii.rPill)),
+              Padding(
+                padding: const EdgeInsets.all(Sp.lg),
+                child: Text('Audio output',
+                    style: Theme.of(context).textTheme.titleLarge),
+              ),
+              ListTile(
+                leading: Icon(_iconFor(d.kind),
+                    color: AppColors.accentBright),
+                title: Text('Playing on ${d.label}'),
+                trailing:
+                    const Icon(Icons.check_rounded, color: AppColors.accentBright),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(Sp.xl, 0, Sp.xl, Sp.lg),
+                child: Text(
+                  'Connect headphones or Bluetooth and audio switches '
+                  'automatically.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 11, color: AppColors.textTertiary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static IconData _iconFor(OutputKind k) => switch (k) {
+        OutputKind.bluetooth => Icons.bluetooth_audio_rounded,
+        OutputKind.headphones => Icons.headphones_rounded,
+        OutputKind.speaker => Icons.speaker_rounded,
+      };
+
   @override
-  Widget build(BuildContext context) {
-    return Glass(
-      radius: Radii.rPill,
-      blur: 18,
-      opacity: 0.10,
-      padding: const EdgeInsets.symmetric(horizontal: Sp.md, vertical: 6),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.speaker_rounded,
-              size: 14, color: AppColors.accentBright),
-          const SizedBox(width: Sp.sm),
-          Text('Output: Device Speakers',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.textSecondary)),
-        ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final d = ref.watch(outputDeviceProvider).valueOrNull ??
+        const OutputDevice(OutputKind.speaker, 'Device Speakers');
+    return GestureDetector(
+      onTap: () => _sheet(context, d),
+      child: Glass(
+        radius: Radii.rPill,
+        blur: 18,
+        opacity: 0.10,
+        padding: const EdgeInsets.symmetric(horizontal: Sp.md, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_iconFor(d.kind), size: 14, color: AppColors.accentBright),
+            const SizedBox(width: Sp.sm),
+            Text('Output: ${d.label}',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary)),
+          ],
+        ),
       ),
     );
   }
