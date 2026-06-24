@@ -9,7 +9,6 @@ import '../../../domain/entities/track.dart';
 import '../../widgets/album_pulse.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/playback_controls.dart';
 import '../../widgets/waveform_seeker.dart';
 import '../../state/player_controller.dart';
 import '../../state/favorites_controller.dart';
@@ -18,11 +17,27 @@ import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
 import 'sleep_timer_sheet.dart';
 
-class NowPlayingScreen extends ConsumerWidget {
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
+  @override
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
+    with SingleTickerProviderStateMixin {
+  // Slow vertical bob for the floating-artwork effect.
+  late final AnimationController _float = AnimationController(
+      vsync: this, duration: const Duration(seconds: 5))
+    ..repeat(reverse: true);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _float.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.listen(playerControllerProvider.select((s) => s.error), (_, err) {
       if (err != null) {
         ScaffoldMessenger.of(context)
@@ -39,19 +54,20 @@ class NowPlayingScreen extends ConsumerWidget {
     final track = state.current;
     if (track == null) return const SizedBox.shrink();
     final media = MediaQuery.of(context);
-    final artSize = media.size.width - Sp.xl * 2;
+    final artSize = (media.size.width * 0.74).clamp(220.0, 360.0);
 
     return Scaffold(
       backgroundColor: AppColors.voidBlack,
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Layered blurred-artwork background + dark gradient veil.
           RepaintBoundary(
             child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+              imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
               child: Artwork(
                 track: track,
-                size: media.size.width * 1.4,
+                size: media.size.width * 1.5,
                 radius: BorderRadius.zero,
               ),
             ),
@@ -60,80 +76,175 @@ class NowPlayingScreen extends ConsumerWidget {
             decoration:
                 BoxDecoration(gradient: AppColors.artVeil(track.accent)),
           ),
+          // Extra bottom darkening for control legibility.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.center,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0x99000000)],
+              ),
+            ),
+          ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: Sp.xl),
               child: Column(
                 children: [
                   const _TopBar(source: 'From your search'),
-                  const Spacer(flex: 3),
-                  AlbumPulse(
-                    accent: track.accent,
-                    active: state.isPlaying,
-                    size: artSize,
-                    child: Hero(
-                      tag: 'art_${track.id}',
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Artwork(
+                  // Artwork takes the flexible upper space, centered + floating.
+                  Expanded(
+                    child: Center(
+                      child: AnimatedBuilder(
+                        animation: _float,
+                        builder: (_, child) => Transform.translate(
+                          offset: Offset(0, (_float.value - 0.5) * 14),
+                          child: child,
+                        ),
+                        child: AlbumPulse(
+                          accent: track.accent,
+                          active: state.isPlaying,
+                          size: artSize,
+                          child: _FloatingArt(
                             track: track,
                             size: artSize,
-                            radius: Radii.rXl,
-                            glow: true,
+                            loading: state.isLoading,
                           ),
-                          if (state.isLoading)
-                            Container(
-                              width: artSize,
-                              height: artSize,
-                              decoration: BoxDecoration(
-                                borderRadius: Radii.rXl,
-                                color: Colors.black.withValues(alpha: 0.35),
-                              ),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                    color: AppColors.accentBright),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                  const Spacer(flex: 3),
-                  _TitleRow(track: track),
-                  const SizedBox(height: Sp.md),
+                  // ---- Bottom cluster, exact spacing rhythm ----
+                  const SizedBox(height: 24), // artwork -> title
+                  _SongInfo(track: track),
+                  const SizedBox(height: 20), // title -> progress
                   WaveformSeeker(
                     progress: state.progress,
+                    position: state.position,
+                    total: state.total,
                     accent: track.accent,
                     onSeek: (f) =>
                         ref.read(playerControllerProvider.notifier).seek(f),
                   ),
-                  const SizedBox(height: Sp.xs),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: Sp.xs),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(Fmt.duration(state.position),
-                            style: Theme.of(context).textTheme.labelSmall),
-                        Text(Fmt.duration(state.total),
-                            style: Theme.of(context).textTheme.labelSmall),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 28), // progress -> controls
+                  const _Controls(),
+                  const SizedBox(height: 32), // controls -> bottom bar
+                  const _BottomBar(),
                   const SizedBox(height: Sp.sm),
-                  PlaybackControls(accent: track.accent),
-                  const Spacer(flex: 2),
-                  _BottomActions(track: track),
-                  const SizedBox(height: Sp.md),
                 ],
               ),
             ),
           ),
-          // Volume drag HUD (right edge).
           const _VolumeDragLayer(),
         ],
       ),
+    );
+  }
+}
+
+class _FloatingArt extends StatelessWidget {
+  final Track track;
+  final double size;
+  final bool loading;
+  const _FloatingArt(
+      {required this.track, required this.size, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    return Hero(
+      tag: 'art_${track.id}',
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            // soft ambient shadow + artwork-colored glow
+            const BoxShadow(
+                color: Color(0x66000000), blurRadius: 40, offset: Offset(0, 22)),
+            BoxShadow(
+              color: track.accent.withValues(alpha: 0.45),
+              blurRadius: 60,
+              spreadRadius: -12,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Artwork(
+              track: track,
+              size: size,
+              radius: BorderRadius.circular(24),
+            ),
+            if (loading)
+              Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  color: Colors.black.withValues(alpha: 0.32),
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.accentBright),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SongInfo extends StatelessWidget {
+  final Track track;
+  const _SongInfo({required this.track});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                track.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w600,
+                  height: 1.12,
+                  letterSpacing: -0.4,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                track.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${Fmt.compact(track.plays)} plays',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: Sp.md),
+        FavButton(track: track, size: 30),
+      ],
     );
   }
 }
@@ -157,7 +268,7 @@ class _TopBar extends ConsumerWidget {
             children: [
               Text('NOW PLAYING',
                   style: text.labelSmall?.copyWith(
-                      letterSpacing: 1.5, color: AppColors.textSecondary)),
+                      letterSpacing: 1.6, color: AppColors.textSecondary)),
               const SizedBox(height: 3),
               Text(source,
                   maxLines: 1,
@@ -209,38 +320,7 @@ class _RoundIcon extends StatelessWidget {
   }
 }
 
-class _TitleRow extends StatelessWidget {
-  final Track track;
-  const _TitleRow({required this.track});
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(track.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.headlineMedium),
-              const SizedBox(height: Sp.xs),
-              Text('${track.artist}  ·  ${Fmt.compact(track.plays)} plays',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.bodyMedium),
-            ],
-          ),
-        ),
-        const SizedBox(width: Sp.md),
-        FavButton(track: track, size: 30),
-      ],
-    );
-  }
-}
-
-/// Animated favorite (Liked Songs) toggle with haptic + pop scale.
+/// Favorite toggle (animated + haptic).
 class FavButton extends ConsumerWidget {
   final Track track;
   final double size;
@@ -273,6 +353,252 @@ class FavButton extends ConsumerWidget {
   }
 }
 
+/// Transport row centered on a glassy 60px play button.
+class _Controls extends ConsumerWidget {
+  const _Controls();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(playerControllerProvider);
+    final ctrl = ref.read(playerControllerProvider.notifier);
+    final accent = state.current?.accent ?? AppColors.accent;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _MiniBtn(
+          icon: Icons.shuffle_rounded,
+          active: state.shuffle,
+          accent: accent,
+          onTap: ctrl.toggleShuffle,
+        ),
+        _PressBtn(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            ctrl.previous();
+          },
+          child: const Icon(Icons.skip_previous_rounded,
+              size: 42, color: Colors.white),
+        ),
+        _PlayButton(
+          isPlaying: state.isPlaying,
+          loading: state.isLoading,
+          accent: accent,
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            ctrl.toggle();
+          },
+        ),
+        _PressBtn(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            ctrl.next();
+          },
+          child: const Icon(Icons.skip_next_rounded,
+              size: 42, color: Colors.white),
+        ),
+        _MiniBtn(
+          icon: switch (state.repeat) {
+            LoopMode.one => Icons.repeat_one_rounded,
+            _ => Icons.repeat_rounded,
+          },
+          active: state.repeat != LoopMode.off,
+          accent: accent,
+          onTap: ctrl.cycleRepeat,
+        ),
+      ],
+    );
+  }
+}
+
+class _PlayButton extends StatefulWidget {
+  final bool isPlaying;
+  final bool loading;
+  final Color accent;
+  final VoidCallback onTap;
+  const _PlayButton({
+    required this.isPlaying,
+    required this.loading,
+    required this.accent,
+    required this.onTap,
+  });
+  @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> {
+  double _s = 1;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _s = 0.92),
+      onTapCancel: () => setState(() => _s = 1),
+      onTapUp: (_) => setState(() => _s = 1),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _s,
+        duration: const Duration(milliseconds: 120),
+        child: Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: AppColors.accentSweep,
+            boxShadow: [
+              BoxShadow(
+                color: widget.accent.withValues(alpha: 0.55),
+                blurRadius: 28,
+                spreadRadius: -2,
+              ),
+            ],
+          ),
+          child: widget.loading
+              ? const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.6, color: Colors.black),
+                )
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (c, a) =>
+                      ScaleTransition(scale: a, child: c),
+                  child: Icon(
+                    widget.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    key: ValueKey(widget.isPlaying),
+                    color: Colors.black,
+                    size: 32,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PressBtn extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _PressBtn({required this.child, required this.onTap});
+  @override
+  State<_PressBtn> createState() => _PressBtnState();
+}
+
+class _PressBtnState extends State<_PressBtn> {
+  double _s = 1;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _s = 0.85),
+      onTapCancel: () => setState(() => _s = 1),
+      onTapUp: (_) => setState(() => _s = 1),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _s,
+        duration: const Duration(milliseconds: 120),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _MiniBtn extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final Color accent;
+  final VoidCallback onTap;
+  const _MiniBtn(
+      {required this.icon,
+      required this.active,
+      required this.accent,
+      required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      iconSize: 24,
+      icon: Icon(
+        icon,
+        color: active ? accent : AppColors.textSecondary,
+        shadows: active
+            ? [Shadow(color: accent.withValues(alpha: 0.8), blurRadius: 12)]
+            : null,
+      ),
+    );
+  }
+}
+
+/// Floating glass action bar (Lyrics / Add / Queue), Apple-Music style.
+class _BottomBar extends ConsumerWidget {
+  const _BottomBar();
+
+  void _sheet(BuildContext context, Widget child) => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => child,
+      );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final track = ref.watch(playerControllerProvider).current;
+    if (track == null) return const SizedBox.shrink();
+    return Glass(
+      radius: const BorderRadius.all(Radius.circular(24)),
+      blur: 26,
+      opacity: 0.12,
+      padding: const EdgeInsets.symmetric(vertical: Sp.sm),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _Action(
+              icon: Icons.lyrics_outlined,
+              label: 'Lyrics',
+              onTap: () => _sheet(context, const LyricsSheet())),
+          _Action(
+              icon: Icons.playlist_add_rounded,
+              label: 'Add',
+              onTap: () => AddToPlaylistSheet.show(context, track)),
+          _Action(
+              icon: Icons.queue_music_rounded,
+              label: 'Queue',
+              onTap: () => _sheet(context, const QueueSheet())),
+        ],
+      ),
+    );
+  }
+}
+
+class _Action extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _Action(
+      {required this.icon, required this.label, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: Radii.rMd,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Sp.lg, vertical: Sp.xs),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: AppColors.textPrimary),
+            const SizedBox(height: 4),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Right-edge vertical drag → volume, with a thin glass HUD overlay.
 class _VolumeDragLayer extends ConsumerStatefulWidget {
   const _VolumeDragLayer();
@@ -289,27 +615,24 @@ class _VolumeDragLayerState extends ConsumerState<_VolumeDragLayer> {
     final vol = ref.watch(playerControllerProvider.select((s) => s.volume));
     return Stack(
       children: [
-        // Gesture strip on the right edge, vertically centered.
         Positioned(
           right: 0,
-          top: h * 0.22,
-          bottom: h * 0.22,
-          width: 64,
+          top: h * 0.24,
+          bottom: h * 0.30,
+          width: 56,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onVerticalDragStart: (_) => setState(() => _show = true),
-            onVerticalDragUpdate: (d) {
-              ref
-                  .read(playerControllerProvider.notifier)
-                  .adjustVolume(-d.primaryDelta! / 280);
-            },
+            onVerticalDragUpdate: (d) => ref
+                .read(playerControllerProvider.notifier)
+                .adjustVolume(-d.primaryDelta! / 280),
             onVerticalDragEnd: (_) => setState(() => _show = false),
           ),
         ),
         if (_show)
           Positioned(
             right: Sp.xl,
-            top: h * 0.32,
+            top: h * 0.34,
             child: _VolumeHud(value: vol),
           ),
       ],
@@ -360,67 +683,6 @@ class _VolumeHud extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
-    );
-  }
-}
-
-class _BottomActions extends StatelessWidget {
-  final Track track;
-  const _BottomActions({required this.track});
-
-  void _sheet(BuildContext context, Widget child) => showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.transparent,
-        isScrollControlled: true,
-        builder: (_) => child,
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Glass(
-      radius: Radii.rPill,
-      padding: const EdgeInsets.symmetric(horizontal: Sp.sm, vertical: Sp.xs),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _Action(
-            icon: Icons.lyrics_outlined,
-            label: 'Lyrics',
-            onTap: () => _sheet(context, const LyricsSheet()),
-          ),
-          _Action(
-            icon: Icons.playlist_add_rounded,
-            label: 'Add',
-            onTap: () => AddToPlaylistSheet.show(context, track),
-          ),
-          _Action(
-            icon: Icons.queue_music_rounded,
-            label: 'Queue',
-            onTap: () => _sheet(context, const QueueSheet()),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Action extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _Action(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 20, color: AppColors.textPrimary),
-      label: Text(label,
-          style: Theme.of(context)
-              .textTheme
-              .labelLarge
-              ?.copyWith(color: AppColors.textPrimary)),
     );
   }
 }
