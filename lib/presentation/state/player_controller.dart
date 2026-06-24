@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -190,6 +191,8 @@ class PlayerController extends Notifier<PlayerState> {
         _player.pause();
         _player.setVolume(_baseVolume); // restore for next play
         state = state.copyWith(clearSleep: true);
+        NotificationService.instance
+            .showNow(2001, '😴 Sleep timer ended', 'Playback paused. Sweet dreams.');
         return;
       }
       // Smooth fade over the final 10 seconds.

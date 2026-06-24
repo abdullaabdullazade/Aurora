@@ -35,6 +35,10 @@ dependencies:
   # Connectivity (offline-mode aesthetic shift)
   connectivity_plus: ^6.1.0
 
+  # Engagement / daily notifications
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
   # Downloads (permission_handler kept; flutter_downloader added when wiring
   # the real download engine — it needs manifest + AGP setup, omitted from the
   # preview build to keep the demo runnable out of the box).
