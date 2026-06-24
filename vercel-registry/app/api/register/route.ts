@@ -1,4 +1,4 @@
-import { redis, KEY_URL, KEY_TS } from '../../../lib/redis';
+import { kv, KEY_URL, KEY_TS } from '../../../lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +8,9 @@ export async function POST(req: Request) {
   if (req.headers.get('x-secret') !== process.env.REGISTER_SECRET) {
     return new Response('Unauthorized', { status: 401 });
   }
+  const redis = kv();
+  if (!redis) return new Response('Storage not configured', { status: 503 });
+
   let body: { url?: string };
   try {
     body = await req.json();

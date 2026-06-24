@@ -1,4 +1,4 @@
-import { redis, KEY_URL, KEY_TS } from '../lib/redis';
+import { kv, KEY_URL, KEY_TS } from '../lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,8 +6,11 @@ export default async function Page() {
   let url: string | null = null;
   let ts: number | null = null;
   try {
-    url = (await redis.get<string>(KEY_URL)) ?? null;
-    ts = (await redis.get<number>(KEY_TS)) ?? null;
+    const redis = kv();
+    if (redis) {
+      url = (await redis.get<string>(KEY_URL)) ?? null;
+      ts = (await redis.get<number>(KEY_TS)) ?? null;
+    }
   } catch {
     /* redis not configured yet */
   }
