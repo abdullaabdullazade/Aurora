@@ -8,18 +8,36 @@ class LocalStore {
   static const _playlistsBox = 'playlists';
   static const _recentsBox = 'recents';
   static const _downloadsBox = 'downloads';
+  static const _favoritesBox = 'favorites';
   static const _recentsKey = 'list';
   static const _maxRecents = 30;
 
   late final Box<dynamic> _playlists;
   late final Box<dynamic> _recents;
   late final Box<dynamic> _downloads;
+  late final Box<dynamic> _favorites;
 
   Future<void> init() async {
     await Hive.initFlutter();
     _playlists = await Hive.openBox(_playlistsBox);
     _recents = await Hive.openBox(_recentsBox);
     _downloads = await Hive.openBox(_downloadsBox);
+    _favorites = await Hive.openBox(_favoritesBox);
+  }
+
+  // --- Favorites ---------------------------------------------------------
+  List<Track> favorites() => _favorites.values
+      .map((e) => Track.fromJson(Map<dynamic, dynamic>.from(e as Map)))
+      .toList();
+
+  bool isFavorite(String id) => _favorites.containsKey(id);
+
+  Future<void> toggleFavorite(Track t) async {
+    if (_favorites.containsKey(t.id)) {
+      await _favorites.delete(t.id);
+    } else {
+      await _favorites.put(t.id, t.toJson());
+    }
   }
 
   // --- Playlists ---------------------------------------------------------
