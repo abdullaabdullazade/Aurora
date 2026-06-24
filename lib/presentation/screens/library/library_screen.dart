@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,8 +7,8 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/playlist.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
-import '../../state/playlist_controller.dart';
 import '../../state/providers.dart';
+import '../../state/playlist_controller.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
@@ -200,7 +201,7 @@ class _LikedSongsRow extends StatelessWidget {
         HapticFeedback.selectionClick();
         onTap();
       },
-      child: Glass(
+      child: GlassTile(
         radius: Radii.rLg,
         padding: const EdgeInsets.all(Sp.md),
         child: Row(
@@ -253,7 +254,7 @@ class _PlaylistRow extends StatelessWidget {
         HapticFeedback.selectionClick();
         onTap();
       },
-      child: Glass(
+      child: GlassTile(
         radius: Radii.rLg,
         padding: const EdgeInsets.all(Sp.md),
         child: Row(
@@ -376,6 +377,21 @@ class _DownloadedTab extends ConsumerWidget {
                   onTap: () => ref
                       .read(playerControllerProvider.notifier)
                       .playQueue(tracks, startAt: i),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded,
+                        color: AppColors.textSecondary),
+                    onPressed: () async {
+                      final t = tracks[i];
+                      if (t.localPath != null) {
+                        try {
+                          final f = File(t.localPath!);
+                          if (f.existsSync()) f.deleteSync();
+                        } catch (_) {}
+                      }
+                      await ref.read(localStoreProvider).removeDownload(t.id);
+                      ref.invalidate(downloadsProvider);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -416,7 +432,7 @@ class _DownloadingTab extends ConsumerWidget {
       itemBuilder: (_, i) {
         final job = entries[i].value;
         final pct = job.progress;
-        return Glass(
+        return GlassTile(
           radius: Radii.rLg,
           padding: const EdgeInsets.all(Sp.md),
           child: Column(
