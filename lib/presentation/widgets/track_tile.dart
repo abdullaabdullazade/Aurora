@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/track.dart';
 import '../state/connectivity_controller.dart';
+import '../screens/library/track_context_sheet.dart';
 import 'artwork.dart';
 
 /// Horizontal row used in lists/queues. Highlights when [active]. Offline,
@@ -42,6 +43,10 @@ class TrackTile extends ConsumerWidget {
         onTap: () {
           HapticFeedback.selectionClick();
           onTap();
+        },
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          TrackContextSheet.show(context, track);
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(
