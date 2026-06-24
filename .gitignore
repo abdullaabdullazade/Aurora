@@ -45,3 +45,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# YouTube auth cookies — never commit (secret)
+cookie.txt
+cookies.txt
+server/cookies.txt
+**/cookies.txt

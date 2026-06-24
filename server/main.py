@@ -73,8 +73,11 @@ _CACHE_TTL = 60 * 30  # 30 min (well under googlevideo expiry)
 
 
 def _cookiefile() -> str | None:
-    """Write YouTube cookies (base64 in YT_COOKIES_B64 env) to /tmp so yt-dlp
-    can bypass the datacenter "confirm you're not a bot" check on Vercel."""
+    """YouTube cookies for datacenter extraction (bypasses the bot/login wall).
+    Prefers a cookies.txt next to this file; else base64 in YT_COOKIES_B64."""
+    local = os.path.join(os.path.dirname(__file__), "cookies.txt")
+    if os.path.exists(local):
+        return local
     b64 = os.environ.get("YT_COOKIES_B64")
     if not b64:
         return None
@@ -209,82 +212,109 @@ def lyrics(title: str, artist: str = "", duration: int = 0) -> dict[str, Any]:
     }
 
 
-def _resolve(video_id: str) -> tuple[str, dict[str, str]]:
-    cached = _stream_cache.get(video_id)
-    if cached and cached[0] > time.time():
-        return cached[1], cached[2]
+_CACHE_DIR = "/tmp/aurora_cache"
+_dl_locks: dict[str, threading.Lock] = {}
+_dl_locks_guard = threading.Lock()
 
-    opts = {
-        "format": "bestaudio/best",
-        # android/web clients return clean progressive audio formats and avoid
-        # SABR/po-token-only streams that yield "format not available".
-        "extractor_args": {
-            "youtube": {"player_client": ["tv", "ios", "mweb", "web"]}
-        },
-    }
-    with _ydl(opts) as ydl:
-        info = ydl.extract_info(
-            f"https://www.youtube.com/watch?v={video_id}", download=False
-        )
 
-    url = info.get("url")
-    if not url:
-        rd = info.get("requested_downloads") or []
-        if rd:
-            url = rd[0].get("url")
-    if not url:
-        # Fallback: pick the highest-bitrate audio format manually.
-        auds = [
-            f for f in (info.get("formats") or [])
-            if f.get("url") and f.get("acodec") not in (None, "none")
-            and f.get("vcodec") in (None, "none")
-        ]
-        auds.sort(key=lambda f: f.get("abr") or 0)
-        if auds:
-            url = auds[-1]["url"]
-    if not url:
+def _lock_for(video_id: str) -> threading.Lock:
+    with _dl_locks_guard:
+        lk = _dl_locks.get(video_id)
+        if lk is None:
+            lk = _dl_locks[video_id] = threading.Lock()
+        return lk
+
+
+def _ensure_local(video_id: str) -> str:
+    """Download the track to a local cache file and return its path.
+
+    Why download instead of proxying the googlevideo URL directly: on a
+    datacenter IP the web client only yields progressive format 18, whose URL
+    is SABR/PO-token-gated and 403s on a plain GET. yt-dlp itself negotiates
+    SABR + the bgutil PO-token + nsig (deno/EJS), so we let it pull the bytes
+    once and serve the cached file (Range-seekable) to the app.
+    """
+    path = os.path.join(_CACHE_DIR, f"{video_id}.mp4")
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        age = time.time() - os.path.getmtime(path)
+        if age < _CACHE_TTL:
+            return path
+
+    lock = _lock_for(video_id)
+    with lock:
+        # Another request may have finished it while we waited.
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            if time.time() - os.path.getmtime(path) < _CACHE_TTL:
+                return path
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        opts = {
+            "format": "bestaudio/best",
+            # web client + bgutil PO-token passes the datacenter bot/login wall.
+            "extractor_args": {"youtube": {"player_client": ["web"]}},
+            # nsig/signature need a JS runtime (deno) + EJS solver scripts;
+            # yt-dlp fetches+caches them on first use.
+            "remote_components": ["ejs:github"],
+            "outtmpl": os.path.join(_CACHE_DIR, "%(id)s.%(ext)s"),
+            "skip_download": False,
+            # avoid the extractor's mandatory ~5s throttle sleep.
+            "sleep_interval": 0,
+            "max_sleep_interval": 0,
+            "sleep_interval_requests": 0,
+            "overwrites": True,
+        }
+        with _ydl(opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+    if not (os.path.exists(path) and os.path.getsize(path) > 0):
         raise HTTPException(404, "no audio stream")
+    return path
 
-    headers = info.get("http_headers") or {}
-    _stream_cache[video_id] = (time.time() + _CACHE_TTL, url, headers)
-    return url, headers
+
+def _parse_range(rng: str, size: int) -> tuple[int, int]:
+    m = re.match(r"bytes=(\d*)-(\d*)", rng or "")
+    if not m:
+        return 0, size - 1
+    a, b = m.group(1), m.group(2)
+    if a == "":  # suffix range: last N bytes
+        n = int(b or 0)
+        return max(0, size - n), size - 1
+    start = int(a)
+    end = int(b) if b else size - 1
+    return start, min(end, size - 1)
 
 
 @app.get("/stream")
-async def stream(v: str, request: Request) -> StreamingResponse:
+def stream(v: str, request: Request) -> StreamingResponse:
     try:
-        url, up_headers = _resolve(v)
+        path = _ensure_local(v)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"resolve failed: {e}") from e
 
-    # Forward the client's Range so just_audio can seek.
-    fwd = dict(up_headers)
+    size = os.path.getsize(path)
     rng = request.headers.get("range")
-    if rng:
-        fwd["Range"] = rng
+    start, end = _parse_range(rng, size) if rng else (0, size - 1)
+    length = end - start + 1
 
-    client = httpx.AsyncClient(timeout=None, follow_redirects=True)
-    upstream = await client.send(
-        client.build_request("GET", url, headers=fwd), stream=True
-    )
-
-    async def body():
-        try:
-            async for chunk in upstream.aiter_bytes(64 * 1024):
+    def body():
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = f.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
                 yield chunk
-        finally:
-            await upstream.aclose()
-            await client.aclose()
 
-    passthru = {}
-    for h in ("content-range", "content-length", "accept-ranges", "content-type"):
-        if h in upstream.headers:
-            passthru[h] = upstream.headers[h]
-    passthru.setdefault("content-type", "audio/mp4")
-    passthru.setdefault("accept-ranges", "bytes")
-
-    return StreamingResponse(
-        body(), status_code=upstream.status_code, headers=passthru
-    )
+    headers = {
+        "accept-ranges": "bytes",
+        "content-length": str(length),
+        "content-type": "audio/mp4",
+    }
+    status = 200
+    if rng:
+        headers["content-range"] = f"bytes {start}-{end}/{size}"
+        status = 206
+    return StreamingResponse(body(), status_code=status, headers=headers)
