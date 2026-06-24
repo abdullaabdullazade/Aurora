@@ -41,16 +41,10 @@ class _RootScaffoldState extends ConsumerState<RootScaffold> {
         seed: seed,
         child: Stack(
           children: [
-            // Animated cross-fade between tabs.
+            // Keep all tabs alive (no rebuild/refetch) for instant, smooth
+            // switching — IndexedStack instead of a rebuilding switcher.
             Positioned.fill(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 320),
-                switchInCurve: Curves.easeOut,
-                child: KeyedSubtree(
-                  key: ValueKey(index),
-                  child: _pages[index],
-                ),
-              ),
+              child: IndexedStack(index: index, children: _pages),
             ),
             // Mini-player + nav bar pinned to the bottom.
             Align(
