@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../domain/entities/track.dart';
 import '../state/player_controller.dart';
+import '../state/providers.dart';
 import 'skeletons.dart';
 import 'track_card.dart';
 
@@ -67,15 +68,35 @@ class SectionCarousel extends ConsumerWidget {
   }
 }
 
-class _Error extends StatelessWidget {
+class _Error extends ConsumerWidget {
   final double height;
   const _Error({required this.height});
   @override
-  Widget build(BuildContext context) => SizedBox(
-        height: height,
-        child: Center(
-          child: Text('Couldn’t load',
-              style: Theme.of(context).textTheme.bodyMedium),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
+    return SizedBox(
+      height: height,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off_rounded,
+                size: 32, color: AppColors.textTertiary),
+            const SizedBox(height: Sp.sm),
+            Text('Can’t reach the server', style: text.bodyMedium),
+            const SizedBox(height: Sp.xs),
+            TextButton(
+              onPressed: () {
+                ref.invalidate(trendingProvider);
+                ref.invalidate(recentlyPlayedProvider);
+              },
+              child: Text('Retry',
+                  style: text.labelLarge
+                      ?.copyWith(color: AppColors.accentBright)),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
