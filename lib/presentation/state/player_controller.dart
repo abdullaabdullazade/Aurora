@@ -189,17 +189,10 @@ class PlayerController extends Notifier<PlayerState> {
     try {
       final uri = await ref.read(musicRepositoryProvider).resolveStream(track);
       if (token != _loadToken) return; // superseded by a newer load
-      debugPrint('[player] resolved stream for "${track.title}"');
-      // ExoPlayer's default `Accept-Encoding: gzip` makes the YouTube CDN
-      // return 403 on these (already-compressed) range requests; force
-      // `identity` and use the matching ANDROID-client User-Agent.
-      await _player.setAudioSource(
-        AudioSource.uri(uri, headers: const {
-          'Accept-Encoding': 'identity',
-          'User-Agent':
-              'com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip',
-        }),
-      );
+      debugPrint('[player] streaming via proxy: $uri');
+      // Audio is served by our resolver proxy (audio/mp4, range-supported),
+      // so no special CDN headers are required.
+      await _player.setAudioSource(AudioSource.uri(uri));
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) await _player.play();
