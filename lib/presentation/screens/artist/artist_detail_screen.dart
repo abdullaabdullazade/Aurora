@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/track.dart';
@@ -28,16 +29,15 @@ class ArtistDetailScreen extends ConsumerWidget {
         slivers: [
           SliverAppBar(
             pinned: true,
-            expandedHeight: 260,
+            expandedHeight: 320,
             backgroundColor: AppColors.voidBlack,
             iconTheme: const IconThemeData(color: Colors.white),
+            // Collapsed title sits clear of the back button (no overlap).
+            title: Text(artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.titleLarge),
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.symmetric(
-                  horizontal: Sp.xl, vertical: Sp.lg),
-              title: Text(artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.headlineMedium),
               background: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -53,23 +53,48 @@ class ArtistDetailScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  Align(
-                    alignment: const Alignment(0, -0.3),
-                    child: Container(
-                      width: 110,
-                      height: 110,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: AppColors.accentSweep,
-                        boxShadow: [
-                          BoxShadow(
-                              color: accent.withValues(alpha: 0.5),
-                              blurRadius: 40,
-                              spreadRadius: -6),
-                        ],
-                      ),
-                      child: const Icon(Icons.person_rounded,
-                          color: Colors.black, size: 56),
+                  SafeArea(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 116,
+                          height: 116,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: AppColors.accentSweep,
+                            boxShadow: [
+                              BoxShadow(
+                                  color: accent.withValues(alpha: 0.5),
+                                  blurRadius: 40,
+                                  spreadRadius: -6),
+                            ],
+                          ),
+                          child: const Icon(Icons.person_rounded,
+                              color: Colors.black, size: 58),
+                        ),
+                        const SizedBox(height: Sp.md),
+                        Text(artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.headlineMedium),
+                        const SizedBox(height: Sp.sm),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: AppColors.glassStroke),
+                            shape: const StadiumBorder(),
+                          ),
+                          onPressed: () {
+                            final uri = Uri.parse(
+                                'https://www.youtube.com/results?search_query=${Uri.encodeComponent(artist)}');
+                            launchUrl(uri,
+                                mode: LaunchMode.externalApplication);
+                          },
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: const Text('View on YouTube'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
