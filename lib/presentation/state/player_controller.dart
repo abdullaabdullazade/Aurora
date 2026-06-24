@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -20,6 +21,8 @@ class PlayerState {
   final bool shuffle;
   final LoopMode repeat;
   final String? error;
+  final double volume; // 0..1
+  final Duration? sleepRemaining; // null = sleep timer off
 
   const PlayerState({
     this.queue = const [],
@@ -31,6 +34,8 @@ class PlayerState {
     this.shuffle = false,
     this.repeat = LoopMode.off,
     this.error,
+    this.volume = 1.0,
+    this.sleepRemaining,
   });
 
   Track? get current =>
@@ -57,6 +62,9 @@ class PlayerState {
     bool? shuffle,
     LoopMode? repeat,
     String? error,
+    double? volume,
+    Duration? sleepRemaining,
+    bool clearSleep = false,
   }) =>
       PlayerState(
         queue: queue ?? this.queue,
@@ -68,6 +76,9 @@ class PlayerState {
         shuffle: shuffle ?? this.shuffle,
         repeat: repeat ?? this.repeat,
         error: error,
+        volume: volume ?? this.volume,
+        sleepRemaining:
+            clearSleep ? null : (sleepRemaining ?? this.sleepRemaining),
       );
 }
 
@@ -77,12 +88,18 @@ class PlayerState {
 class PlayerController extends Notifier<PlayerState> {
   late final AudioPlayer _player;
   int _loadToken = 0; // guards against out-of-order async loads
+  Timer? _sleepTimer;
+  DateTime? _sleepEnd;
+  double _baseVolume = 1.0; // user volume, preserved across sleep fade
 
   @override
   PlayerState build() {
     _player = AudioPlayer();
     _wireStreams();
-    ref.onDispose(_player.dispose);
+    ref.onDispose(() {
+      _sleepTimer?.cancel();
+      _player.dispose();
+    });
     return const PlayerState();
   }
 
@@ -141,6 +158,47 @@ class PlayerController extends Notifier<PlayerState> {
 
   Future<void> seek(double fraction) =>
       _player.seek(state.total * fraction.clamp(0.0, 1.0));
+
+  // --- Volume (drag HUD) -------------------------------------------------
+  Future<void> setVolume(double v) async {
+    final vol = v.clamp(0.0, 1.0);
+    _baseVolume = vol;
+    await _player.setVolume(vol);
+    state = state.copyWith(volume: vol);
+  }
+
+  Future<void> adjustVolume(double delta) => setVolume(_baseVolume + delta);
+
+  // --- Sleep timer (with 10s fade-out) ----------------------------------
+  static const _fadeWindow = Duration(seconds: 10);
+
+  void setSleep(Duration? duration) {
+    _sleepTimer?.cancel();
+    if (duration == null) {
+      _sleepEnd = null;
+      _player.setVolume(_baseVolume);
+      state = state.copyWith(clearSleep: true);
+      return;
+    }
+    _sleepEnd = DateTime.now().add(duration);
+    state = state.copyWith(sleepRemaining: duration);
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final left = _sleepEnd!.difference(DateTime.now());
+      if (left <= Duration.zero) {
+        _sleepTimer?.cancel();
+        _player.pause();
+        _player.setVolume(_baseVolume); // restore for next play
+        state = state.copyWith(clearSleep: true);
+        return;
+      }
+      // Smooth fade over the final 10 seconds.
+      if (left <= _fadeWindow) {
+        final f = left.inMilliseconds / _fadeWindow.inMilliseconds;
+        _player.setVolume(_baseVolume * f.clamp(0.0, 1.0));
+      }
+      state = state.copyWith(sleepRemaining: left);
+    });
+  }
 
   void toggleShuffle() => state = state.copyWith(shuffle: !state.shuffle);
 

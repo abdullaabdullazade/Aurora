@@ -6,21 +6,23 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/track.dart';
+import '../../widgets/album_pulse.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/playback_controls.dart';
+import '../../widgets/waveform_seeker.dart';
 import '../../state/player_controller.dart';
 import '../../state/favorites_controller.dart';
 import '../library/add_to_playlist_sheet.dart';
 import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
+import 'sleep_timer_sheet.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
   const NowPlayingScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Surface playback errors as a snackbar.
     ref.listen(playerControllerProvider.select((s) => s.error), (_, err) {
       if (err != null) {
         ScaffoldMessenger.of(context)
@@ -44,7 +46,6 @@ class NowPlayingScreen extends ConsumerWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Blurred album-art ambient backdrop.
           RepaintBoundary(
             child: ImageFiltered(
               imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
@@ -64,48 +65,63 @@ class NowPlayingScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: Sp.xl),
               child: Column(
                 children: [
-                  _TopBar(source: 'From your search'),
+                  const _TopBar(source: 'From your search'),
                   const Spacer(flex: 3),
-                  // Artwork with loading overlay.
-                  Hero(
-                    tag: 'art_${track.id}',
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Artwork(
-                          track: track,
-                          size: artSize,
-                          radius: Radii.rXl,
-                          glow: true,
-                        ),
-                        if (state.isLoading)
-                          Container(
-                            width: artSize,
-                            height: artSize,
-                            decoration: BoxDecoration(
-                              borderRadius: Radii.rXl,
-                              color: Colors.black.withValues(alpha: 0.35),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                  color: AppColors.accentBright),
-                            ),
+                  AlbumPulse(
+                    accent: track.accent,
+                    active: state.isPlaying,
+                    size: artSize,
+                    child: Hero(
+                      tag: 'art_${track.id}',
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Artwork(
+                            track: track,
+                            size: artSize,
+                            radius: Radii.rXl,
+                            glow: true,
                           ),
-                      ],
+                          if (state.isLoading)
+                            Container(
+                              width: artSize,
+                              height: artSize,
+                              decoration: BoxDecoration(
+                                borderRadius: Radii.rXl,
+                                color: Colors.black.withValues(alpha: 0.35),
+                              ),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                    color: AppColors.accentBright),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                   const Spacer(flex: 3),
                   _TitleRow(track: track),
-                  const SizedBox(height: Sp.lg),
-                  _Seeker(
+                  const SizedBox(height: Sp.md),
+                  WaveformSeeker(
                     progress: state.progress,
-                    position: state.position,
-                    total: state.total,
                     accent: track.accent,
                     onSeek: (f) =>
                         ref.read(playerControllerProvider.notifier).seek(f),
                   ),
-                  const SizedBox(height: Sp.md),
+                  const SizedBox(height: Sp.xs),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Sp.xs),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(Fmt.duration(state.position),
+                            style: Theme.of(context).textTheme.labelSmall),
+                        Text(Fmt.duration(state.total),
+                            style: Theme.of(context).textTheme.labelSmall),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: Sp.sm),
                   PlaybackControls(accent: track.accent),
                   const Spacer(flex: 2),
                   _BottomActions(track: track),
@@ -114,18 +130,22 @@ class NowPlayingScreen extends ConsumerWidget {
               ),
             ),
           ),
+          // Volume drag HUD (right edge).
+          const _VolumeDragLayer(),
         ],
       ),
     );
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
   final String source;
   const _TopBar({required this.source});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final sleeping = ref.watch(
+        playerControllerProvider.select((s) => s.sleepRemaining != null));
     return Row(
       children: [
         _RoundIcon(
@@ -136,8 +156,8 @@ class _TopBar extends StatelessWidget {
           child: Column(
             children: [
               Text('NOW PLAYING',
-                  style: text.labelSmall
-                      ?.copyWith(letterSpacing: 1.5, color: AppColors.textSecondary)),
+                  style: text.labelSmall?.copyWith(
+                      letterSpacing: 1.5, color: AppColors.textSecondary)),
               const SizedBox(height: 3),
               Text(source,
                   maxLines: 1,
@@ -146,7 +166,11 @@ class _TopBar extends StatelessWidget {
             ],
           ),
         ),
-        _RoundIcon(icon: Icons.more_horiz_rounded, onTap: () {}),
+        _RoundIcon(
+          icon: sleeping ? Icons.bedtime_rounded : Icons.bedtime_outlined,
+          highlight: sleeping,
+          onTap: () => SleepTimerSheet.show(context),
+        ),
       ],
     );
   }
@@ -155,7 +179,9 @@ class _TopBar extends StatelessWidget {
 class _RoundIcon extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  const _RoundIcon({required this.icon, required this.onTap});
+  final bool highlight;
+  const _RoundIcon(
+      {required this.icon, required this.onTap, this.highlight = false});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -165,10 +191,19 @@ class _RoundIcon extends StatelessWidget {
         height: 42,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.06),
-          border: Border.all(color: AppColors.glassStroke),
+          color: highlight
+              ? AppColors.accentSoft
+              : Colors.white.withValues(alpha: 0.06),
+          border: Border.all(
+              color: highlight
+                  ? AppColors.accentBright
+                  : AppColors.glassStroke),
         ),
-        child: Icon(icon, size: 24, color: AppColors.textPrimary),
+        child: Icon(icon,
+            size: 22,
+            color: highlight
+                ? AppColors.accentBright
+                : AppColors.textPrimary),
       ),
     );
   }
@@ -230,10 +265,7 @@ class FavButton extends ConsumerWidget {
           color: liked ? AppColors.accentBright : AppColors.textSecondary,
           size: size,
           shadows: liked
-              ? [
-                  const Shadow(
-                      color: AppColors.accentBright, blurRadius: 16),
-                ]
+              ? [const Shadow(color: AppColors.accentBright, blurRadius: 16)]
               : null,
         ),
       ),
@@ -241,66 +273,93 @@ class FavButton extends ConsumerWidget {
   }
 }
 
-/// Custom seeker: thin track, scrubbing emits selection haptics.
-class _Seeker extends StatefulWidget {
-  final double progress;
-  final Duration position;
-  final Duration total;
-  final Color accent;
-  final ValueChanged<double> onSeek;
-  const _Seeker({
-    required this.progress,
-    required this.position,
-    required this.total,
-    required this.accent,
-    required this.onSeek,
-  });
-
+/// Right-edge vertical drag → volume, with a thin glass HUD overlay.
+class _VolumeDragLayer extends ConsumerStatefulWidget {
+  const _VolumeDragLayer();
   @override
-  State<_Seeker> createState() => _SeekerState();
+  ConsumerState<_VolumeDragLayer> createState() => _VolumeDragLayerState();
 }
 
-class _SeekerState extends State<_Seeker> {
-  double? _drag;
+class _VolumeDragLayerState extends ConsumerState<_VolumeDragLayer> {
+  bool _show = false;
 
   @override
   Widget build(BuildContext context) {
-    final value = _drag ?? widget.progress;
-    final shown = _drag != null ? widget.total * _drag! : widget.position;
-    final text = Theme.of(context).textTheme;
-    return Column(
+    final h = MediaQuery.of(context).size.height;
+    final vol = ref.watch(playerControllerProvider.select((s) => s.volume));
+    return Stack(
       children: [
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 5,
-            activeTrackColor: widget.accent,
-            thumbColor: Colors.white,
-            overlayColor: widget.accent.withValues(alpha: 0.2),
-          ),
-          child: Slider(
-            value: value.clamp(0.0, 1.0),
-            onChangeStart: (_) => HapticFeedback.selectionClick(),
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              setState(() => _drag = v);
+        // Gesture strip on the right edge, vertically centered.
+        Positioned(
+          right: 0,
+          top: h * 0.22,
+          bottom: h * 0.22,
+          width: 64,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: (_) => setState(() => _show = true),
+            onVerticalDragUpdate: (d) {
+              ref
+                  .read(playerControllerProvider.notifier)
+                  .adjustVolume(-d.primaryDelta! / 280);
             },
-            onChangeEnd: (v) {
-              widget.onSeek(v);
-              setState(() => _drag = null);
-            },
+            onVerticalDragEnd: (_) => setState(() => _show = false),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Sp.sm),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(Fmt.duration(shown), style: text.labelSmall),
-              Text(Fmt.duration(widget.total), style: text.labelSmall),
-            ],
+        if (_show)
+          Positioned(
+            right: Sp.xl,
+            top: h * 0.32,
+            child: _VolumeHud(value: vol),
           ),
-        ),
       ],
+    );
+  }
+}
+
+class _VolumeHud extends StatelessWidget {
+  final double value;
+  const _VolumeHud({required this.value});
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: Radii.rPill,
+      blur: 24,
+      opacity: 0.14,
+      padding: const EdgeInsets.symmetric(vertical: Sp.md, horizontal: Sp.sm),
+      child: Column(
+        children: [
+          Icon(
+            value <= 0.001
+                ? Icons.volume_off_rounded
+                : value < 0.5
+                    ? Icons.volume_down_rounded
+                    : Icons.volume_up_rounded,
+            color: AppColors.accentBright,
+            size: 20,
+          ),
+          const SizedBox(height: Sp.sm),
+          SizedBox(
+            height: 120,
+            width: 6,
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: ClipRRect(
+                borderRadius: Radii.rPill,
+                child: LinearProgressIndicator(
+                  value: value,
+                  backgroundColor: AppColors.glassStroke,
+                  valueColor:
+                      const AlwaysStoppedAnimation(AppColors.accentBright),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: Sp.sm),
+          Text('${(value * 100).round()}',
+              style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
     );
   }
 }
