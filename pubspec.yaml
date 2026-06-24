@@ -39,6 +39,10 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   timezone: ^0.9.4
 
+  # Sharing + audio output device detection
+  share_plus: ^10.1.4
+  audio_session: ^0.1.21
+
   # Downloads (permission_handler kept; flutter_downloader added when wiring
   # the real download engine — it needs manifest + AGP setup, omitted from the
   # preview build to keep the demo runnable out of the box).
