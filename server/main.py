@@ -275,6 +275,33 @@ def _lock_for(video_id: str) -> threading.Lock:
         return lk
 
 
+_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+
+
+def _trim_cache() -> None:
+    """Keep the cache under a size cap by evicting the oldest files, so an
+    unattended box never fills its disk (each track is ~22 MB)."""
+    try:
+        files = [
+            (os.path.getmtime(p), os.path.getsize(p), p)
+            for p in __import__("glob").glob(os.path.join(_CACHE_DIR, "*"))
+            if os.path.isfile(p)
+        ]
+    except Exception:  # noqa: BLE001
+        return
+    total = sum(s for _, s, _ in files)
+    if total <= _CACHE_MAX_BYTES:
+        return
+    for _, size, p in sorted(files):  # oldest first
+        try:
+            os.remove(p)
+            total -= size
+        except Exception:  # noqa: BLE001
+            pass
+        if total <= _CACHE_MAX_BYTES:
+            break
+
+
 def _normalize_cache(video_id: str, path: str) -> str | None:
     """yt-dlp writes <id>.<ext> (m4a/mp4). Rename the produced file to the
     canonical .mp4 cache path and return it (None if nothing was produced)."""
@@ -352,6 +379,7 @@ def _ensure_local(video_id: str) -> str:
                 # the cache key + audio/mp4 content-type are stable.
                 got = _normalize_cache(video_id, path)
                 if got:
+                    _trim_cache()
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
