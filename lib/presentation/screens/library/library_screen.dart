@@ -414,24 +414,43 @@ class _DownloadingTab extends ConsumerWidget {
       itemCount: entries.length,
       separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
       itemBuilder: (_, i) {
-        final pct = entries[i].value;
+        final job = entries[i].value;
+        final pct = job.progress;
         return Glass(
           radius: Radii.rLg,
-          padding: const EdgeInsets.all(Sp.lg),
+          padding: const EdgeInsets.all(Sp.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.downloading_rounded,
-                      color: AppColors.accentBright),
-                  const SizedBox(width: Sp.sm),
+                  Artwork(track: job.track, size: 46, radius: Radii.rSm),
+                  const SizedBox(width: Sp.md),
                   Expanded(
-                      child: Text('Downloading…', style: text.titleMedium)),
-                  Text('${(pct * 100).round()}%', style: text.labelSmall),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(job.track.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.titleMedium),
+                        Text('${(pct * 100).round()}%  ·  ${job.track.artist}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.labelSmall),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AppColors.textSecondary),
+                    onPressed: () => ref
+                        .read(downloadControllerProvider.notifier)
+                        .cancel(entries[i].key),
+                  ),
                 ],
               ),
-              const SizedBox(height: Sp.md),
+              const SizedBox(height: Sp.sm),
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: LinearProgressIndicator(

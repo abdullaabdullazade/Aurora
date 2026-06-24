@@ -12,11 +12,22 @@ class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  /// Set by DownloadController — fired when a download notification's Cancel
+  /// action is tapped.
+  void Function(String trackId)? onDownloadCancel;
+
   static const _engagementChannel = AndroidNotificationChannel(
     'com.aurora.music.channel.engagement',
     'Aurora updates',
     description: 'Daily mixes, reminders and listening moments',
     importance: Importance.defaultImportance,
+  );
+
+  static const _downloadChannel = AndroidNotificationChannel(
+    'com.aurora.music.channel.downloads',
+    'Downloads',
+    description: 'Download progress',
+    importance: Importance.low,
   );
 
   Future<void> init() async {
@@ -25,14 +36,86 @@ class NotificationService {
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
-    await _plugin.initialize(settings);
+    await _plugin.initialize(settings,
+        onDidReceiveNotificationResponse: _onResponse);
 
     final android13 = _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await android13?.createNotificationChannel(_engagementChannel);
+    await android13?.createNotificationChannel(_downloadChannel);
     await android13?.requestNotificationsPermission();
     _ready = true;
+  }
+
+  void _onResponse(NotificationResponse r) {
+    final a = r.actionId;
+    if (a != null && a.startsWith('cancel_')) {
+      onDownloadCancel?.call(a.substring(7));
+    }
+  }
+
+  // --- Download notifications -------------------------------------------
+  int _dlId(String trackId) => 50000 + (trackId.hashCode & 0xffff);
+
+  Future<void> showDownloadProgress(
+      String trackId, String title, int percent) async {
+    if (!_ready) return;
+    final details = AndroidNotificationDetails(
+      _downloadChannel.id,
+      _downloadChannel.name,
+      channelDescription: _downloadChannel.description,
+      importance: Importance.low,
+      priority: Priority.low,
+      onlyAlertOnce: true,
+      ongoing: true,
+      autoCancel: false,
+      showProgress: true,
+      maxProgress: 100,
+      progress: percent.clamp(0, 100),
+      indeterminate: percent <= 0,
+      actions: [
+        AndroidNotificationAction('cancel_$trackId', 'Cancel',
+            cancelNotification: false),
+      ],
+    );
+    await _plugin.show(_dlId(trackId), 'Downloading · $percent%', title,
+        NotificationDetails(android: details));
+  }
+
+  Future<void> showDownloadDone(String trackId, String title) async {
+    if (!_ready) return;
+    await _plugin.cancel(_dlId(trackId));
+    await _plugin.show(
+      _dlId(trackId),
+      '✓ Downloaded',
+      title,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'com.aurora.music.channel.downloads', 'Downloads',
+          importance: Importance.low, priority: Priority.low),
+      ),
+    );
+  }
+
+  Future<void> showDownloadError(String trackId, String title) async {
+    if (!_ready) return;
+    await _plugin.cancel(_dlId(trackId));
+    await _plugin.show(
+      _dlId(trackId),
+      '⚠ Download failed',
+      title,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'com.aurora.music.channel.downloads', 'Downloads',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority),
+      ),
+    );
+  }
+
+  Future<void> cancelDownloadNotif(String trackId) async {
+    if (_ready) await _plugin.cancel(_dlId(trackId));
   }
 
   NotificationDetails get _details => const NotificationDetails(
