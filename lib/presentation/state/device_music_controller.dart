@@ -39,27 +39,56 @@ Track _toTrack(SongModel s) => Track(
     );
 
 /// Scans the device library (requests permission on first use).
-/// Returns all audio tracks; UI groups + filters by folder.
-final deviceSongsProvider = FutureProvider<List<Track>>((ref) async {
-  // Use permission_handler (reliable) instead of on_audio_query's own check,
-  // which sometimes reports denied even right after the user grants access.
+/// Audio-library permission — CHECK ONLY (never auto-prompts, so the dialog
+/// doesn't keep reappearing). The "Grant access" button calls [requestAudio].
+final audioPermissionProvider = FutureProvider<bool>((ref) async {
+  if (await Permission.audio.status.isGranted) return true;
+  return Permission.storage.status.isGranted;
+});
+
+/// Actually prompts for the permission (called from the gate button).
+Future<bool> requestAudioPermission() async {
   var st = await Permission.audio.request(); // Android 13+ READ_MEDIA_AUDIO
   if (!st.isGranted) {
     final storage = await Permission.storage.request(); // <= Android 12
     if (storage.isGranted) st = storage;
   }
-  if (!st.isGranted) throw const _PermissionDenied();
+  return st.isGranted;
+}
 
-  final songs = await _audioQuery.querySongs(
-    sortType: SongSortType.DATE_ADDED,
-    orderType: OrderType.DESC_OR_GREATER,
-    uriType: UriType.EXTERNAL,
-    ignoreCase: true,
-  );
-  return songs
-      .where((s) => s.isMusic == true && (s.duration ?? 0) > 0)
-      .map(_toTrack)
-      .toList(growable: false);
+// Guards against concurrent querySongs calls — on_audio_query crashes with
+// "Reply already submitted" if its query runs twice at once (e.g. a rebuild
+// during the permission flow). Dedupe to a single in-flight query.
+Future<List<Track>>? _inflight;
+
+Future<List<Track>> _queryOnce() {
+  return _inflight ??= () async {
+    try {
+      final songs = await _audioQuery.querySongs(
+        sortType: SongSortType.DATE_ADDED,
+        orderType: OrderType.DESC_OR_GREATER,
+        uriType: UriType.EXTERNAL,
+        ignoreCase: true,
+      );
+      return songs
+          .where((s) => s.isMusic == true && (s.duration ?? 0) > 0)
+          .map(_toTrack)
+          .toList(growable: false);
+    } finally {
+      _inflight = null;
+    }
+  }();
+}
+
+/// Returns all audio tracks; UI groups + filters by folder.
+final deviceSongsProvider = FutureProvider<List<Track>>((ref) async {
+  final granted = await ref.watch(audioPermissionProvider.future);
+  if (!granted) throw const _PermissionDenied();
+  // Double-gate: on_audio_query crashes ("Reply already submitted") if its
+  // query runs while the plugin itself reports no library access. Only query
+  // when the plugin confirms access.
+  if (!await _audioQuery.permissionsStatus()) throw const _PermissionDenied();
+  return _queryOnce();
 });
 
 class _PermissionDenied implements Exception {

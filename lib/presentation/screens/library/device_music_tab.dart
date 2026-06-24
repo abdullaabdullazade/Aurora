@@ -24,7 +24,11 @@ class DeviceMusicTab extends ConsumerWidget {
       loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.accent)),
       error: (e, _) => _PermissionGate(
-        onGrant: () => ref.invalidate(deviceSongsProvider),
+        onGrant: () async {
+          await requestAudioPermission();
+          ref.invalidate(audioPermissionProvider);
+          ref.invalidate(deviceSongsProvider);
+        },
       ),
       data: (list) {
         if (list.isEmpty) {
