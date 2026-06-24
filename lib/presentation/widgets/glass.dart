@@ -17,7 +17,7 @@ class Glass extends StatelessWidget {
     super.key,
     required this.child,
     this.radius = Radii.rLg,
-    this.blur = 18,
+    this.blur = 14,
     this.opacity = 0.08,
     this.padding,
     this.border,

@@ -20,7 +20,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _ctrl = TextEditingController();
   Timer? _debounce;
   int _filter = 0;
-  static const _filters = ['Tracks', 'Videos', 'Playlists', 'Albums'];
+  static const _filters = ['Tracks', 'Playlists', 'Albums'];
 
   void _onChanged(String value) {
     _debounce?.cancel();

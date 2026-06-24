@@ -30,7 +30,7 @@ class FrostedNavBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(Sp.lg, 0, Sp.lg, Sp.md),
       child: Glass(
         radius: Radii.rPill,
-        blur: 24,
+        blur: 16,
         opacity: 0.10,
         padding: const EdgeInsets.symmetric(horizontal: Sp.sm, vertical: Sp.sm),
         child: Row(
