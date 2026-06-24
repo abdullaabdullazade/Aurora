@@ -33,21 +33,23 @@ class HomeScreen extends ConsumerWidget {
         slivers: [
           SliverAppBar(
             pinned: true,
-            expandedHeight: 132,
-            backgroundColor: Colors.transparent,
+            expandedHeight: 128,
+            backgroundColor: AppColors.voidBlack,
             surfaceTintColor: Colors.transparent,
+            title: Text('Aurora',
+                style: text.titleLarge?.copyWith(
+                    color: AppColors.accentBright,
+                    fontWeight: FontWeight.w800)),
             flexibleSpace: FlexibleSpaceBar(
-              titlePadding:
-                  const EdgeInsets.only(left: Sp.lg, bottom: Sp.md),
-              title: Text('Good evening',
-                  style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              background: Padding(
-                padding: const EdgeInsets.fromLTRB(Sp.lg, 64, Sp.lg, 0),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: Text('Aurora',
-                      style: text.displayLarge?.copyWith(
-                          color: AppColors.accentBright, letterSpacing: -1)),
+              collapseMode: CollapseMode.parallax,
+              background: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Sp.lg, 56, Sp.lg, 0),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Text('Good evening',
+                        style: text.displayLarge?.copyWith(letterSpacing: -1)),
+                  ),
                 ),
               ),
             ),
