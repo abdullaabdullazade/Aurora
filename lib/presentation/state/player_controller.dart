@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
@@ -255,9 +256,20 @@ class PlayerController extends Notifier<PlayerState> {
         debugPrint('[player] streaming via proxy: $uri');
       }
       if (token != _loadToken) return; // superseded by a newer load
-      // Remote audio comes from our proxy (audio/mp4, range-supported), local
-      // audio from a file URI — both play with no special headers.
-      await _player.setAudioSource(AudioSource.uri(uri));
+      // Tag with a MediaItem so just_audio_background shows the track in the
+      // media notification / lock screen and keeps playing in the background.
+      await _player.setAudioSource(AudioSource.uri(
+        uri,
+        tag: MediaItem(
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          duration: track.duration > Duration.zero ? track.duration : null,
+          artUri: track.artworkUrl.isNotEmpty
+              ? Uri.parse(track.artworkUrl)
+              : null,
+        ),
+      ));
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) await _player.play();

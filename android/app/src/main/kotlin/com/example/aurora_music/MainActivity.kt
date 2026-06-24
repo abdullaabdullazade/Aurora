@@ -1,5 +1,7 @@
 package com.example.aurora_music
 
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 
-class MainActivity : FlutterActivity()
+// AudioServiceActivity (instead of FlutterActivity) so just_audio_background /
+// audio_service can run a media-style foreground service for background playback.
+class MainActivity : AudioServiceActivity()
