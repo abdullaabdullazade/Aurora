@@ -193,10 +193,16 @@ class PlayerController extends Notifier<PlayerState> {
     }
   }
 
-  Future<void> next() => _player.seekToNext();
+  Future<void> next() async {
+    if (_player.hasNext) {
+      await _player.seekToNext();
+    } else if (state.queue.length > 1) {
+      await _player.seek(Duration.zero, index: 0); // wrap to start
+    }
+  }
 
   Future<void> previous() async {
-    if (state.position.inSeconds > 3) {
+    if (state.position.inSeconds > 3 || !_player.hasPrevious) {
       await _player.seek(Duration.zero);
     } else {
       await _player.seekToPrevious();

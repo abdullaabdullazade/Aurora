@@ -12,7 +12,12 @@ class QueueSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(playerControllerProvider);
+    // Watch only queue + index (NOT position) so the reorderable list doesn't
+    // rebuild 4×/sec — that was the Up-Next lag.
+    final queue =
+        ref.watch(playerControllerProvider.select((s) => s.queue));
+    final activeIndex =
+        ref.watch(playerControllerProvider.select((s) => s.index));
     final ctrl = ref.read(playerControllerProvider.notifier);
     final text = Theme.of(context).textTheme;
 
@@ -22,7 +27,7 @@ class QueueSheet extends ConsumerWidget {
       maxChildSize: 0.92,
       builder: (context, scroll) => Glass(
         radius: const BorderRadius.vertical(top: Radii.xl),
-        blur: 30,
+        blur: 16,
         opacity: 0.16,
         child: Column(
           children: [
@@ -41,8 +46,7 @@ class QueueSheet extends ConsumerWidget {
                 children: [
                   Text('Up Next', style: text.titleLarge),
                   const Spacer(),
-                  Text('${state.queue.length} tracks',
-                      style: text.labelSmall),
+                  Text('${queue.length} tracks', style: text.labelSmall),
                 ],
               ),
             ),
@@ -50,48 +54,51 @@ class QueueSheet extends ConsumerWidget {
               child: ReorderableListView.builder(
                 scrollController: scroll,
                 padding: const EdgeInsets.fromLTRB(Sp.sm, 0, Sp.sm, Sp.xxl),
-                itemCount: state.queue.length,
+                itemCount: queue.length,
                 onReorder: ctrl.reorderQueue,
                 proxyDecorator: (child, _, __) => Material(
                   color: Colors.transparent,
                   child: child,
                 ),
                 itemBuilder: (context, i) {
-                  final t = state.queue[i];
-                  final active = i == state.index;
-                  return Padding(
+                  final t = queue[i];
+                  final active = i == activeIndex;
+                  return InkWell(
                     key: ValueKey(t.id),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: Sp.sm, vertical: Sp.xs),
-                    child: Row(
-                      children: [
-                        Artwork(track: t, size: 46, radius: Radii.rSm),
-                        const SizedBox(width: Sp.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(t.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: text.titleMedium?.copyWith(
-                                    color: active
-                                        ? AppColors.accentBright
-                                        : AppColors.textPrimary,
-                                  )),
-                              Text(t.artist,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: text.bodyMedium),
-                            ],
+                    onTap: () => ctrl.playQueue(queue, startAt: i),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: Sp.sm, vertical: Sp.xs),
+                      child: Row(
+                        children: [
+                          Artwork(track: t, size: 46, radius: Radii.rSm),
+                          const SizedBox(width: Sp.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: text.titleMedium?.copyWith(
+                                      color: active
+                                          ? AppColors.accentBright
+                                          : AppColors.textPrimary,
+                                    )),
+                                Text(t.artist,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: text.bodyMedium),
+                              ],
+                            ),
                           ),
-                        ),
-                        ReorderableDragStartListener(
-                          index: i,
-                          child: const Icon(Icons.drag_handle_rounded,
-                              color: AppColors.textSecondary),
-                        ),
-                      ],
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: const Icon(Icons.drag_handle_rounded,
+                                color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },

@@ -2,7 +2,7 @@
 abstract final class AppConfig {
   /// Vercel registry that always returns the PC resolver's current URL.
   /// Set this to your deployed registry, e.g. https://aurora-registry.vercel.app
-  static const String registryUrl = 'https://aurora-registry.vercel.app';
+  static const String registryUrl = 'https://vercel-registry-five.vercel.app';
 
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.
