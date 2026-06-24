@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/ringtone/ringtone_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/track.dart';
@@ -41,6 +42,28 @@ class TrackContextSheet extends ConsumerWidget {
     Navigator.pop(context);
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Future<void> _setRingtone(BuildContext context, RingtoneType type) async {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    final svc = RingtoneService.instance;
+    final ok = await svc.set(track.id, type);
+    if (ok) {
+      messenger.showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.elevated,
+        content: Text('Set as ${type.name}: ${track.title}'),
+      ));
+    } else {
+      // Needs the "modify system settings" permission.
+      await svc.openWriteSettings();
+      messenger.showSnackBar(const SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.elevated,
+        content: Text('Allow “Modify system settings”, then try again'),
+      ));
+    }
   }
 
   @override
@@ -115,6 +138,19 @@ class TrackContextSheet extends ConsumerWidget {
                 _share();
               },
             ),
+            if (track.localPath != null) ...[
+              const Divider(height: 1, color: AppColors.glassStroke),
+              _Item(
+                icon: Icons.notifications_active_rounded,
+                label: 'Set as ringtone',
+                onTap: () => _setRingtone(context, RingtoneType.ringtone),
+              ),
+              _Item(
+                icon: Icons.alarm_rounded,
+                label: 'Set as alarm',
+                onTap: () => _setRingtone(context, RingtoneType.alarm),
+              ),
+            ],
             const SizedBox(height: Sp.md),
           ],
         ),
