@@ -22,6 +22,8 @@ dependencies:
 
   # Networking / scraping
   dio: ^5.7.0
+  # On-device YouTube stream resolution — the phone's residential IP isn't
+  # subject to the datacenter PO-token block, so playback resolves locally.
   youtube_explode_dart: ^2.3.2
 
   # Local DB (offline-first)

@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
-import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -97,7 +97,6 @@ class PlayerState {
 class PlayerController extends Notifier<PlayerState> {
   late final ja.AudioPlayer _player;
   late final ja.AndroidEqualizer equalizer; // exposed to the EQ screen
-  ja.ConcatenatingAudioSource? _playlist;
   Timer? _sleepTimer;
   DateTime? _sleepEnd;
   double _baseVolume = 1.0;
@@ -125,6 +124,8 @@ class PlayerController extends Notifier<PlayerState> {
     });
   }
 
+  int _loadToken = 0;
+
   void _wireStreams() {
     _player.positionStream.listen((p) {
       if (!state.isLoading) state = state.copyWith(position: p);
@@ -134,21 +135,9 @@ class PlayerController extends Notifier<PlayerState> {
     });
     _player.playerStateStream.listen((ps) {
       state = state.copyWith(isPlaying: ps.playing);
-    });
-    // The OS controls (and gapless advance) drive the index — mirror it.
-    _player.currentIndexStream.listen((i) {
-      if (i == null || i < 0 || i >= state.queue.length) return;
-      if (i == state.index) return;
-      state = state.copyWith(index: i, position: Duration.zero);
-      final t = state.queue[i];
-      _recordRecent(t);
-      _applyPalette(t);
+      if (ps.processingState == ja.ProcessingState.completed) _onComplete();
     });
   }
-
-  Uri _uriFor(Track t) => t.localPath != null
-      ? Uri.file(t.localPath!)
-      : Uri.parse('${AppConfig.apiBase}/stream?v=${t.id}');
 
   MediaItem _media(Track t) => MediaItem(
         id: t.id,
@@ -162,25 +151,11 @@ class PlayerController extends Notifier<PlayerState> {
     if (tracks.isEmpty) return;
     state = state.copyWith(
       queue: tracks,
-      index: startAt,
+      index: startAt.clamp(0, tracks.length - 1),
       position: Duration.zero,
       duration: Duration.zero,
-      isLoading: true,
     );
-    try {
-      _playlist = ja.ConcatenatingAudioSource(
-        children: [for (final t in tracks) ja.AudioSource.uri(_uriFor(t), tag: _media(t))],
-      );
-      await _player.setAudioSource(_playlist!,
-          initialIndex: startAt, initialPosition: Duration.zero);
-      state = state.copyWith(isLoading: false);
-      _recordRecent(tracks[startAt]);
-      _applyPalette(tracks[startAt]);
-      await _player.play();
-    } catch (e, st) {
-      debugPrint('[player] queue load failed: $e\n$st');
-      state = state.copyWith(isLoading: false, error: 'Playback failed');
-    }
+    await _loadCurrent(autoplay: true);
   }
 
   void playSingle(Track track) => playQueue([track]);
@@ -194,23 +169,75 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   Future<void> next() async {
-    if (_player.hasNext) {
-      await _player.seekToNext();
-    } else if (state.queue.length > 1) {
-      await _player.seek(Duration.zero, index: 0); // wrap to start
+    if (state.queue.isEmpty) return;
+    final last = state.index >= state.queue.length - 1;
+    if (last && state.repeat == LoopMode.off && state.queue.length > 1) {
+      // wrap so "next" always does something
+    } else if (last && state.queue.length == 1) {
+      return;
     }
+    state = state.copyWith(
+        index: last ? 0 : state.index + 1,
+        position: Duration.zero,
+        duration: Duration.zero);
+    await _loadCurrent(autoplay: true);
   }
 
   Future<void> previous() async {
-    if (state.position.inSeconds > 3 || !_player.hasPrevious) {
+    if (state.position.inSeconds > 3 || state.index == 0) {
       await _player.seek(Duration.zero);
-    } else {
-      await _player.seekToPrevious();
+      return;
     }
+    state = state.copyWith(
+        index: state.index - 1,
+        position: Duration.zero,
+        duration: Duration.zero);
+    await _loadCurrent(autoplay: true);
   }
 
   Future<void> seek(double fraction) =>
       _player.seek(state.total * fraction.clamp(0.0, 1.0));
+
+  void _onComplete() {
+    if (state.repeat == LoopMode.one) {
+      _player.seek(Duration.zero);
+      _player.play();
+    } else {
+      next();
+    }
+  }
+
+  // Resolves the current track on-device (residential IP) and plays it.
+  Future<void> _loadCurrent({bool autoplay = false}) async {
+    final track = state.current;
+    if (track == null) return;
+    final token = ++_loadToken;
+    state = state.copyWith(isLoading: true, position: Duration.zero);
+    _recordRecent(track);
+    try {
+      final Uri uri;
+      final Map<String, String>? headers;
+      if (track.localPath != null) {
+        uri = Uri.file(track.localPath!);
+        headers = null;
+      } else {
+        uri = await ref.read(musicRepositoryProvider).resolveStream(track);
+        headers = ytStreamHeaders;
+      }
+      if (token != _loadToken) return;
+      await _player.setAudioSource(
+          ja.AudioSource.uri(uri, tag: _media(track), headers: headers));
+      if (token != _loadToken) return;
+      state = state.copyWith(isLoading: false);
+      if (autoplay) await _player.play();
+      _applyPalette(track);
+    } catch (e, st) {
+      debugPrint('[player] load failed: $e\n$st');
+      if (token == _loadToken) {
+        state = state.copyWith(isLoading: false, error: 'Playback failed');
+      }
+    }
+  }
 
   // --- Volume ------------------------------------------------------------
   Future<void> setVolume(double v) async {
@@ -232,22 +259,13 @@ class PlayerController extends Notifier<PlayerState> {
     state = state.copyWith(speed: nextSpeed);
   }
 
-  // --- Shuffle / repeat (native, so OS controls stay in sync) -----------
-  Future<void> toggleShuffle() async {
-    final on = !state.shuffle;
-    await _player.setShuffleModeEnabled(on);
-    state = state.copyWith(shuffle: on);
-  }
+  // --- Shuffle / repeat (handled in _onComplete / next) -----------------
+  void toggleShuffle() => state = state.copyWith(shuffle: !state.shuffle);
 
-  Future<void> cycleRepeat() async {
+  void cycleRepeat() {
     const order = LoopMode.values;
-    final next = order[(state.repeat.index + 1) % order.length];
-    await _player.setLoopMode(switch (next) {
-      LoopMode.off => ja.LoopMode.off,
-      LoopMode.one => ja.LoopMode.one,
-      LoopMode.all => ja.LoopMode.all,
-    });
-    state = state.copyWith(repeat: next);
+    state =
+        state.copyWith(repeat: order[(state.repeat.index + 1) % order.length]);
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
@@ -255,7 +273,6 @@ class PlayerController extends Notifier<PlayerState> {
     if (newIndex > oldIndex) newIndex -= 1;
     final moved = list.removeAt(oldIndex);
     list.insert(newIndex, moved);
-    _playlist?.move(oldIndex, newIndex);
     var idx = state.index;
     if (oldIndex == state.index) {
       idx = newIndex;

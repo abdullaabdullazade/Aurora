@@ -3,12 +3,14 @@ import '../../core/config/app_config.dart';
 import '../../core/db/local_store.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/music_repository.dart';
+import '../datasources/yt_stream_resolver.dart';
 
 /// Talks to the FastAPI + yt-dlp resolver. All YouTube extraction happens
 /// server-side, so the app never gets rate-limited / 403'd by googlevideo.
 class ApiMusicRepository implements MusicRepository {
   final Dio _dio;
   final LocalStore _store;
+  final YtStreamResolver _resolver = YtStreamResolver();
   final Map<String, List<Track>> _cache = {};
 
   ApiMusicRepository(this._store, [Dio? dio])
@@ -59,8 +61,8 @@ class ApiMusicRepository implements MusicRepository {
   @override
   Future<List<Track>> downloads() async => _store.downloads();
 
-  /// Audio is streamed through the server proxy (range-supported, no 403).
+  /// Resolved on-device (residential IP) — works without the cloud server.
   @override
-  Future<Uri> resolveStream(Track track, {bool audioOnly = true}) async =>
-      Uri.parse('${AppConfig.apiBase}/stream?v=${track.id}');
+  Future<Uri> resolveStream(Track track, {bool audioOnly = true}) =>
+      _resolver.audioUrl(track.id);
 }

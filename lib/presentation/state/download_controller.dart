@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -82,11 +83,16 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
 
     IOSink? sink;
     try {
-      final resp = await _dio.get<ResponseBody>(
-        '${AppConfig.apiBase}/stream?v=${t.id}',
+      // Resolve the audio URL on-device (residential IP), then stream it.
+      final src = await ref.read(musicRepositoryProvider).resolveStream(t);
+      final resp = await _dio.getUri<ResponseBody>(
+        src,
         options: Options(
           responseType: ResponseType.stream,
-          headers: existing > 0 ? {'Range': 'bytes=$existing-'} : null,
+          headers: {
+            ...ytStreamHeaders,
+            if (existing > 0) 'Range': 'bytes=$existing-',
+          },
         ),
         cancelToken: token,
       );
