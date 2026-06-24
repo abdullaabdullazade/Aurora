@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audio_session/audio_session.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -89,6 +90,7 @@ class PlayerState {
 /// records recents to the local store.
 class PlayerController extends Notifier<PlayerState> {
   late final AudioPlayer _player;
+  late final AndroidEqualizer equalizer; // exposed to the EQ screen
   int _loadToken = 0; // guards against out-of-order async loads
   Timer? _sleepTimer;
   DateTime? _sleepEnd;
@@ -96,13 +98,26 @@ class PlayerController extends Notifier<PlayerState> {
 
   @override
   PlayerState build() {
-    _player = AudioPlayer();
+    equalizer = AndroidEqualizer();
+    _player = AudioPlayer(
+      audioPipeline: AudioPipeline(androidAudioEffects: [equalizer]),
+    );
     _wireStreams();
+    _wireAudioSession();
     ref.onDispose(() {
       _sleepTimer?.cancel();
       _player.dispose();
     });
     return const PlayerState();
+  }
+
+  // Pause when headphones/Bluetooth disconnect (the "becoming noisy" event).
+  Future<void> _wireAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+    session.becomingNoisyEventStream.listen((_) {
+      if (_player.playing) _player.pause();
+    });
   }
 
   void _wireStreams() {
