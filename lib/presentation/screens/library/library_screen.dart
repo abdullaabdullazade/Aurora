@@ -11,7 +11,9 @@ import '../../state/providers.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
+import '../../state/favorites_controller.dart';
 import 'device_music_tab.dart';
+import 'favorites_screen.dart';
 import 'playlist_detail_screen.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -159,33 +161,77 @@ class _PlaylistsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playlists = ref.watch(playlistsProvider);
-    final text = Theme.of(context).textTheme;
-
-    if (playlists.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.library_add_rounded,
-                size: 64, color: AppColors.textTertiary),
-            const SizedBox(height: Sp.md),
-            Text('No playlists yet', style: text.titleMedium),
-            const SizedBox(height: Sp.xs),
-            Text('Tap + to create your first one', style: text.bodyMedium),
-          ],
-        ),
-      );
-    }
+    final likedCount = ref.watch(favoritesProvider).length;
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
-      itemCount: playlists.length,
+      itemCount: playlists.length + 1, // + pinned Liked Songs
       separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
-      itemBuilder: (_, i) => _PlaylistRow(
-        playlist: playlists[i],
-        onTap: () => onOpen(playlists[i].id),
-        onDelete: () =>
-            ref.read(playlistsProvider.notifier).delete(playlists[i].id),
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return _LikedSongsRow(
+            count: likedCount,
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const FavoritesScreen())),
+          );
+        }
+        final p = playlists[i - 1];
+        return _PlaylistRow(
+          playlist: p,
+          onTap: () => onOpen(p.id),
+          onDelete: () => ref.read(playlistsProvider.notifier).delete(p.id),
+        );
+      },
+    );
+  }
+}
+
+class _LikedSongsRow extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _LikedSongsRow({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Glass(
+        radius: Radii.rLg,
+        padding: const EdgeInsets.all(Sp.md),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                borderRadius: Radii.rSm,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF7C4DFF), AppColors.accentBright],
+                ),
+              ),
+              child: const Icon(Icons.favorite_rounded, color: Colors.white),
+            ),
+            const SizedBox(width: Sp.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Liked Songs', style: text.titleMedium),
+                  const SizedBox(height: 2),
+                  Text('$count songs', style: text.bodyMedium),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondary),
+          ],
+        ),
       ),
     );
   }
