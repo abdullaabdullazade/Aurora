@@ -48,9 +48,10 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   @override
   Widget build(BuildContext context) {
     final lyrics = ref.watch(lyricsProvider);
-    final posSec =
-        ref.watch(playerControllerProvider.select((s) => s.position)).inMilliseconds /
-            1000.0;
+    // Watch whole seconds only — rebuilding 4×/sec made the sheet janky.
+    final posSec = ref
+        .watch(playerControllerProvider.select((s) => s.position.inSeconds))
+        .toDouble();
     final text = Theme.of(context).textTheme;
 
     return DraggableScrollableSheet(
@@ -59,7 +60,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
       maxChildSize: 0.95,
       builder: (context, sheetScroll) => Glass(
         radius: const BorderRadius.vertical(top: Radii.xl),
-        blur: 32,
+        blur: 18,
         opacity: 0.16,
         child: Column(
           children: [
