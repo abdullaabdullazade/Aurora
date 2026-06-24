@@ -1,10 +1,12 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:on_audio_query_pluse/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
-final _audioQuery = OnAudioQuery();
+// Native MediaStore scan (Kotlin) — stable, off the UI thread. Replaces
+// on_audio_query.querySongs which crashed with "Reply already submitted".
+const _mediaCh = MethodChannel('aurora/media');
 
 /// One device music folder with its tracks.
 class MusicFolder {
@@ -26,17 +28,19 @@ String _folderOf(String filePath) {
   return i <= 0 ? filePath : filePath.substring(0, i);
 }
 
-Track _toTrack(SongModel s) => Track(
-      id: s.id.toString(),
-      title: s.title,
-      artist: (s.artist == null || s.artist == '<unknown>')
-          ? 'Unknown artist'
-          : s.artist!,
-      artworkUrl: '', // local art resolved via QueryArtworkWidget by id
-      duration: Duration(milliseconds: s.duration ?? 0),
-      accent: Track.accentFor(s.id.toString()),
-      localPath: s.data,
-    );
+Track _toTrack(Map<dynamic, dynamic> m) {
+  final id = m['id'] as String;
+  final artist = (m['artist'] as String?) ?? 'Unknown artist';
+  return Track(
+    id: id,
+    title: (m['title'] as String?) ?? 'Unknown',
+    artist: (artist == '<unknown>') ? 'Unknown artist' : artist,
+    artworkUrl: '', // local art resolved via QueryArtworkWidget by id
+    duration: Duration(milliseconds: (m['duration'] as num?)?.toInt() ?? 0),
+    accent: Track.accentFor(id),
+    localPath: m['data'] as String?,
+  );
+}
 
 /// Scans the device library (requests permission on first use).
 /// Audio-library permission — CHECK ONLY (never auto-prompts, so the dialog
@@ -56,23 +60,16 @@ Future<bool> requestAudioPermission() async {
   return st.isGranted;
 }
 
-// Guards against concurrent querySongs calls — on_audio_query crashes with
-// "Reply already submitted" if its query runs twice at once (e.g. a rebuild
-// during the permission flow). Dedupe to a single in-flight query.
+// Dedupe to a single in-flight scan.
 Future<List<Track>>? _inflight;
 
 Future<List<Track>> _queryOnce() {
   return _inflight ??= () async {
     try {
-      final songs = await _audioQuery.querySongs(
-        sortType: SongSortType.DATE_ADDED,
-        orderType: OrderType.DESC_OR_GREATER,
-        uriType: UriType.EXTERNAL,
-        ignoreCase: true,
-      );
-      return songs
-          .where((s) => s.isMusic == true && (s.duration ?? 0) > 0)
-          .map(_toTrack)
+      final res =
+          await _mediaCh.invokeMethod<List<dynamic>>('querySongs') ?? const [];
+      return res
+          .map((e) => _toTrack(Map<dynamic, dynamic>.from(e as Map)))
           .toList(growable: false);
     } finally {
       _inflight = null;
