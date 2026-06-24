@@ -28,8 +28,12 @@ class TrackContextSheet extends ConsumerWidget {
 
   Future<void> _share() async {
     if (track.localPath != null) {
+      final safe = track.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
       await Share.shareXFiles(
-        [XFile(track.localPath!)],
+        [
+          XFile(track.localPath!,
+              name: '$safe.m4a', mimeType: 'audio/mp4')
+        ],
         text: '${track.title} — ${track.artist}',
       );
     } else {
