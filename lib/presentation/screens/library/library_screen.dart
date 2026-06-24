@@ -442,6 +442,20 @@ class _DownloadingTab extends ConsumerWidget {
                     ),
                   ),
                   IconButton(
+                    icon: Icon(
+                        job.paused
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
+                        color: AppColors.accentBright),
+                    onPressed: () {
+                      final ctrl =
+                          ref.read(downloadControllerProvider.notifier);
+                      job.paused
+                          ? ctrl.resume(entries[i].key)
+                          : ctrl.pause(entries[i].key);
+                    },
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.close_rounded,
                         color: AppColors.textSecondary),
                     onPressed: () => ref
