@@ -6,60 +6,44 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Soft aurora glow -->
-    <path android:pathData="M54,58m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="radial"
-                android:centerX="54" android:centerY="58" android:gradientRadius="40">
-                <item android:offset="0.0" android:color="#3318FFB0" />
-                <item android:offset="1.0" android:color="#0018FFB0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Aurora ribbon 1 (top, brightest) -->
-    <path
-        android:strokeWidth="7"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M22,50 C36,34 48,66 60,48 S86,36 92,50">
+    <!-- Clean, balanced equalizer mark, centered in the safe zone. -->
+    <path android:strokeWidth="9" android:strokeLineCap="round"
+        android:fillColor="#00000000" android:pathData="M37,46 L37,62">
         <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear"
-                android:startX="22" android:startY="40" android:endX="92" android:endY="50">
+            <gradient android:type="linear" android:startX="0" android:startY="32"
+                android:endX="0" android:endY="76">
                 <item android:offset="0.0" android:color="#FF00E676" />
-                <item android:offset="0.5" android:color="#FF18FFB0" />
-                <item android:offset="1.0" android:color="#FF00E5FF" />
+                <item android:offset="1.0" android:color="#FF1DB954" />
             </gradient>
         </aapt:attr>
     </path>
-
-    <!-- Aurora ribbon 2 (middle) -->
-    <path
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M20,62 C34,48 46,78 60,60 S84,50 94,62">
+    <path android:strokeWidth="9" android:strokeLineCap="round"
+        android:fillColor="#00000000" android:pathData="M50,34 L50,74">
         <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear"
-                android:startX="20" android:startY="55" android:endX="94" android:endY="62">
-                <item android:offset="0.0" android:color="#FF1DB954" />
+            <gradient android:type="linear" android:startX="0" android:startY="32"
+                android:endX="0" android:endY="76">
+                <item android:offset="0.0" android:color="#FF18FFB0" />
+                <item android:offset="1.0" android:color="#FF00E676" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeWidth="9" android:strokeLineCap="round"
+        android:fillColor="#00000000" android:pathData="M63,40 L63,68">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="0" android:startY="32"
+                android:endX="0" android:endY="76">
+                <item android:offset="0.0" android:color="#FF00E5FF" />
                 <item android:offset="1.0" android:color="#FF18FFB0" />
             </gradient>
         </aapt:attr>
     </path>
-
-    <!-- Aurora ribbon 3 (bottom, softer purple tail) -->
-    <path
-        android:strokeWidth="5"
-        android:strokeAlpha="0.85"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M24,74 C36,64 48,86 62,72 S82,64 90,74">
+    <path android:strokeWidth="9" android:strokeLineCap="round"
+        android:fillColor="#00000000" android:pathData="M76,48 L76,60">
         <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear"
-                android:startX="24" android:startY="70" android:endX="90" android:endY="74">
-                <item android:offset="0.0" android:color="#FF18FFB0" />
-                <item android:offset="1.0" android:color="#FF7C4DFF" />
+            <gradient android:type="linear" android:startX="0" android:startY="32"
+                android:endX="0" android:endY="76">
+                <item android:offset="0.0" android:color="#FF00E5FF" />
+                <item android:offset="1.0" android:color="#FF18FFB0" />
             </gradient>
         </aapt:attr>
     </path>
