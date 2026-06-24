@@ -51,6 +51,38 @@ abstract final class AppTheme {
       }),
     );
   }
+
+  // Light variant. Immersive media screens (player, detail) stay dark by
+  // design; this mainly themes the browse surfaces.
+  static const Color lightBg = Color(0xFFF3F3F6);
+  static const Color lightInk = Color(0xFF0B0C10);
+  static const Color lightInk2 = Color(0xFF5B5B62);
+
+  static ThemeData light() {
+    final scheme = const ColorScheme.light(
+      primary: AppColors.accent,
+      secondary: AppColors.accent,
+      surface: Colors.white,
+      onSurface: lightInk,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: lightBg,
+      textTheme: AppType.build().apply(
+        bodyColor: lightInk,
+        displayColor: lightInk,
+      ),
+      splashColor: AppColors.accentSoft,
+      highlightColor: Colors.transparent,
+      iconTheme: const IconThemeData(color: lightInk, size: 24),
+      pageTransitionsTheme: const PageTransitionsTheme(builders: {
+        TargetPlatform.android: _FadeUpTransitionBuilder(),
+        TargetPlatform.iOS: _FadeUpTransitionBuilder(),
+      }),
+    );
+  }
 }
 
 /// Soft fade-through + subtle upward slide for route pushes.

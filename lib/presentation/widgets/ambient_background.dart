@@ -30,6 +30,7 @@ class _AmbientBackgroundState extends State<AmbientBackground>
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Stack(
       children: [
         Positioned.fill(
@@ -37,7 +38,7 @@ class _AmbientBackgroundState extends State<AmbientBackground>
             child: AnimatedBuilder(
               animation: _c,
               builder: (_, __) => CustomPaint(
-                painter: _AmbientPainter(_c.value, widget.seed),
+                painter: _AmbientPainter(_c.value, widget.seed, dark),
               ),
             ),
           ),
@@ -51,24 +52,28 @@ class _AmbientBackgroundState extends State<AmbientBackground>
 class _AmbientPainter extends CustomPainter {
   final double t;
   final Color seed;
-  _AmbientPainter(this.t, this.seed);
+  final bool dark;
+  _AmbientPainter(this.t, this.seed, this.dark);
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    canvas.drawRect(rect, Paint()..color = AppColors.voidBlack);
+    canvas.drawRect(
+        rect, Paint()..color = dark ? AppColors.voidBlack : const Color(0xFFF3F3F6));
 
+    final a1 = dark ? 0.30 : 0.16;
+    final a2 = dark ? 0.12 : 0.08;
     _blob(
       canvas,
       Offset(size.width * (0.2 + 0.15 * t), size.height * 0.18),
       size.width * 0.7,
-      seed.withValues(alpha: 0.30),
+      seed.withValues(alpha: a1),
     );
     _blob(
       canvas,
       Offset(size.width * (0.85 - 0.2 * t), size.height * (0.7 + 0.05 * t)),
       size.width * 0.55,
-      AppColors.accent.withValues(alpha: 0.12),
+      AppColors.accent.withValues(alpha: a2),
     );
   }
 
@@ -81,5 +86,6 @@ class _AmbientPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AmbientPainter old) => old.t != t || old.seed != seed;
+  bool shouldRepaint(_AmbientPainter old) =>
+      old.t != t || old.seed != seed || old.dark != dark;
 }

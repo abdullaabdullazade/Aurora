@@ -54,6 +54,11 @@ class LocalStore {
   Future<void> setHiddenFolders(Set<String> folders) =>
       _settings.put(_hiddenFoldersKey, folders.toList());
 
+  // --- Theme mode --------------------------------------------------------
+  /// 'dark' | 'light' | 'system' (defaults to dark — the app's native look).
+  String themeMode() => (_settings.get('theme_mode') as String?) ?? 'dark';
+  Future<void> setThemeMode(String mode) => _settings.put('theme_mode', mode);
+
   // --- Playlists ---------------------------------------------------------
   List<Playlist> playlists() => _playlists.values
       .map((e) => Playlist.fromJson(Map<dynamic, dynamic>.from(e as Map)))

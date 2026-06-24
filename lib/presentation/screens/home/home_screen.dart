@@ -7,6 +7,7 @@ import '../../state/providers.dart';
 import '../../widgets/aurora_refresh.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/section_carousel.dart';
+import '../settings/settings_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -60,15 +61,19 @@ class HomeScreen extends ConsumerWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(right: Sp.lg, left: Sp.xs),
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AppColors.accentSweep,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const SettingsScreen())),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: AppColors.accentSweep,
+                    ),
+                    child: const Icon(Icons.person_rounded,
+                        color: Colors.black, size: 20),
                   ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.black, size: 20),
                 ),
               ),
             ],

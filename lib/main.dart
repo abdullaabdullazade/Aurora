@@ -7,6 +7,7 @@ import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/root_scaffold.dart';
 import 'presentation/state/providers.dart';
+import 'presentation/state/settings_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,15 +40,18 @@ Future<void> main() async {
   );
 }
 
-class AuroraApp extends StatelessWidget {
+class AuroraApp extends ConsumerWidget {
   const AuroraApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'Aurora Music',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: mode,
       home: const RootScaffold(),
     );
   }
