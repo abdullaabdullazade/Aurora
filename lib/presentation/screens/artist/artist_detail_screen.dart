@@ -6,6 +6,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
 import '../../state/providers.dart';
+import '../../widgets/artwork.dart';
 import '../../widgets/skeletons.dart';
 import '../../widgets/track_tile.dart';
 
@@ -74,8 +75,16 @@ class ArtistDetailScreen extends ConsumerWidget {
                                   spreadRadius: -6),
                             ],
                           ),
-                          child: const Icon(Icons.person_rounded,
-                              color: Colors.black, size: 58),
+                          // Use the artist's top result artwork as the avatar.
+                          child: ClipOval(
+                            child: tracks.valueOrNull?.firstOrNull != null
+                                ? Artwork(
+                                    track: tracks.value!.first,
+                                    size: 116,
+                                    radius: BorderRadius.zero)
+                                : const Icon(Icons.person_rounded,
+                                    color: Colors.black, size: 58),
+                          ),
                         ),
                         const SizedBox(height: Sp.md),
                         Text(artist,
