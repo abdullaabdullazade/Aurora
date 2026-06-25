@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+.vercel
+
+# Vercel auto-register secrets — NEVER commit
+vercel.env
+.last_url

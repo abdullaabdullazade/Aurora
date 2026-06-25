@@ -1,0 +1,16 @@
+[Unit]
+Description=Push Cloudflare tunnel URL to Vercel Edge Config
+After=cloudflared.service network-online.target
+Requires=cloudflared.service
+PartOf=cloudflared.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=azureuser
+ExecStart=/bin/bash /home/azureuser/aurora/register_url.sh
+StandardOutput=append:/home/azureuser/register.log
+StandardError=append:/home/azureuser/register.log
+
+[Install]
+WantedBy=multi-user.target
