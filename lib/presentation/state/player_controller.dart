@@ -8,7 +8,6 @@ import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../../core/notifications/notification_service.dart';
-import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -215,18 +214,13 @@ class PlayerController extends Notifier<PlayerState> {
     state = state.copyWith(isLoading: true, position: Duration.zero);
     _recordRecent(track);
     try {
-      final Uri uri;
-      final Map<String, String>? headers;
-      if (track.localPath != null) {
-        uri = Uri.file(track.localPath!);
-        headers = null;
-      } else {
-        uri = await ref.read(musicRepositoryProvider).resolveStream(track);
-        headers = ytStreamHeaders;
-      }
+      final uri = track.localPath != null
+          ? Uri.file(track.localPath!)
+          : await ref.read(musicRepositoryProvider).resolveStream(track);
       if (token != _loadToken) return;
+      // Proxy/local serve clean audio — no special CDN headers needed.
       await _player.setAudioSource(
-          ja.AudioSource.uri(uri, tag: _media(track), headers: headers));
+          ja.AudioSource.uri(uri, tag: _media(track)));
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) await _player.play();
