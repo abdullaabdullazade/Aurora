@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh YouTube cookies from VPS Chrome into aurora/cookies.txt
+
+[Service]
+Type=oneshot
+User=azureuser
+ExecStart=/bin/bash /home/azureuser/aurora/cookie_refresh.sh
+StandardOutput=append:/home/azureuser/cookie-refresh.log
+StandardError=append:/home/azureuser/cookie-refresh.log

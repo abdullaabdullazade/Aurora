@@ -66,6 +66,8 @@ def _register_loop() -> None:
 @app.on_event("startup")
 def _start_register() -> None:
     threading.Thread(target=_register_loop, daemon=True).start()
+    # Seed the clean-proxy pool so the first plays are fast, then keep it topped.
+    threading.Thread(target=_warm_loop, daemon=True).start()
 
 # tiny in-memory cache: video_id -> (expiry_ts, direct_url, headers)
 _stream_cache: dict[str, tuple[float, str, dict[str, str]]] = {}
@@ -118,10 +120,87 @@ def _proxies() -> list[str]:
     return out
 
 
+# Only SOME residential exit nodes are clean for YouTube's player API; the rest
+# get "Sign in to confirm you're not a bot" regardless of cookies. We discover
+# the clean ones (a background warmer probes them in parallel) and reuse them,
+# so the common request hits a known-good IP and resolves in ~3s instead of
+# burning attempts on flagged nodes.
+_good_proxies: list[str] = []
+_good_lock = threading.Lock()
+_PROBE_URL = "https://www.youtube.com/watch?v=9bZkp7q19f0"
+
+
+def _record_good(p: str | None) -> None:
+    if not p:
+        return
+    with _good_lock:
+        if p in _good_proxies:
+            _good_proxies.remove(p)
+        _good_proxies.insert(0, p)
+        del _good_proxies[10:]
+
+
+def _drop_good(p: str | None) -> None:
+    if not p:
+        return
+    with _good_lock:
+        if p in _good_proxies:
+            _good_proxies.remove(p)
+
+
 def _pick_proxy() -> str | None:
     import random
+    with _good_lock:
+        good = list(_good_proxies)
+    if good and random.random() < 0.9:
+        return random.choice(good)
     pool = _proxies()
     return random.choice(pool) if pool else None
+
+
+def _proxy_clean(proxy: str) -> bool:
+    """True if this exit node can extract (not bot-walled). Fast, no download."""
+    opts = {
+        "quiet": True, "no_warnings": True, "skip_download": True,
+        "noplaylist": True, "remote_components": ["ejs:github"],
+        "extractor_args": {
+            "youtube": {"player_client": ["android_vr"], "fetch_pot": ["never"]}
+        },
+        "socket_timeout": 12, "retries": 0, "extractor_retries": 0,
+        "proxy": proxy,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(_PROBE_URL, download=False)
+        return bool(info and (info.get("formats") or info.get("url")))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _warm_proxies(target: int = 5, tries: int = 24) -> None:
+    """Probe random proxies in parallel; remember the clean ones."""
+    import random
+    from concurrent.futures import ThreadPoolExecutor
+    pool = _proxies()
+    if not pool:
+        return
+    sample = random.sample(pool, min(tries, len(pool)))
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        for proxy, ok in zip(sample, ex.map(_proxy_clean, sample)):
+            if ok:
+                _record_good(proxy)
+        # stop early if we already have enough
+    # (map drains fully; target is advisory)
+
+
+def _warm_loop() -> None:
+    while True:
+        try:
+            if len(_good_proxies) < 3:
+                _warm_proxies()
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(120)
 
 
 def _ydl(opts: dict[str, Any], use_cookies: bool = True) -> yt_dlp.YoutubeDL:
@@ -344,48 +423,66 @@ def _ensure_local(video_id: str) -> str:
                 return path
         os.makedirs(_CACHE_DIR, exist_ok=True)
         url = f"https://www.youtube.com/watch?v={video_id}"
-        # Rotate player clients across retries: a bot-wall on one client/attempt
-        # is often transient, and a different client sometimes slips through.
-        # NB: do NOT zero the sleep intervals — YouTube's pacing is anti-bot;
-        # hammering a datacenter IP with no delay gets it rate-limited fast.
-        clients = [["web"], ["web_safari"], ["mweb"]]
+        # Retry with a fresh residential IP each attempt (a flagged exit node
+        # fails fast thanks to socket_timeout). Do NOT force player_client:
+        # pinning web/web_safari/mweb forces the SABR/PO-token path, which hangs
+        # for ~minutes when bgutil's get_pot stalls. yt-dlp's default client set
+        # picks a non-PO client and pulls the bytes in ~1s (proven manually).
         last_err: Exception | None = None
-        for attempt, client in enumerate(clients):
+        # Many fast attempts with a short timeout beat few slow ones: a good
+        # residential proxy pulls the bytes in ~2-4s, a dead one is abandoned in
+        # ~8s and we hop to the next exit node — so first-byte stays under the
+        # player's ~8s connect timeout in the common case.
+        for attempt in range(6):
             opts = {
                 # Audio-only, m4a/mp4 only (itag 140 ≈ 4MB, then any m4a audio,
                 # last resort itag 18 360p ≈ 3MB). No bare "bestaudio" (could be
                 # webm/opus) and no "/best" (multi-hundred-MB video) — keeps the
                 # container mp4-family so we can serve it as audio/mp4.
                 "format": "140/bestaudio[ext=m4a]/18",
-                # Residential proxy bypasses the datacenter bot wall; nsig/
-                # signature solved via deno + EJS (fetched once).
-                "extractor_args": {"youtube": {"player_client": client}},
+                # nsig/signature solved via deno + EJS (fetched once).
                 "remote_components": ["ejs:github"],
+                # android_vr serves itag 140 directly and needs NO PO token, so
+                # we skip the web/web_safari clients whose bgutil PO-token fetch
+                # times out (~20s each). fetch_pot=never removes any bgutil call.
+                # This is the whole ballgame: ~2-5s downloads instead of ~50s.
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android_vr"],
+                        "fetch_pot": ["never"],
+                    }
+                },
                 "outtmpl": os.path.join(_CACHE_DIR, f"{video_id}.%(ext)s"),
                 "skip_download": False,
                 "overwrites": True,
-                "retries": 3,
-                "extractor_retries": 2,
+                "retries": 1,
+                "extractor_retries": 1,
+                # Dead/slow proxy is abandoned fast so we hop to a fresh IP.
+                "socket_timeout": 12,
             }
-            # Fresh residential IP per attempt so a flagged exit node doesn't
-            # kill the retry.
             proxy = _pick_proxy()
             if proxy:
                 opts["proxy"] = proxy
             try:
+                # Fresh logged-in cookies (auto-refreshed from the VPS Chrome)
+                # ride along on a clean residential IP — unlocks restricted
+                # formats and matches the account; the clean IP is what actually
+                # clears the bot wall.
                 with _ydl(opts) as ydl:
                     ydl.download([url])
                 # The real extension (.m4a/.mp4) varies; normalize to .mp4 so
                 # the cache key + audio/mp4 content-type are stable.
                 got = _normalize_cache(video_id, path)
                 if got:
+                    _record_good(proxy)
                     _trim_cache()
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
-            # brief backoff before the next client attempt
-            if attempt < len(clients) - 1:
-                time.sleep(1.5)
+                _drop_good(proxy)
+            # brief backoff before the next attempt
+            if attempt < 5:
+                time.sleep(0.5)
 
     if not (os.path.exists(path) and os.path.getsize(path) > 0):
         raise HTTPException(404, f"no audio stream: {last_err}")
