@@ -11,18 +11,19 @@ cd ~/aurora || exit 1
 
 LOG=~/cloudflared.log
 LAST=~/aurora/.last_url
+LASTV=""; [ -f "$LAST" ] && LASTV=$(cat "$LAST")
 
-# Poll the cloudflared log up to 60s for the trycloudflare URL.
+# Poll the cloudflared log up to 90s for a trycloudflare URL that differs from
+# the last one we pushed. cloudflared appends to its logfile, so right after a
+# restart the old URL is still the newest line until the new one is written —
+# waiting for a *different* URL avoids re-pushing the stale one.
 URL=""
-for i in $(seq 1 60); do
-  URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -1)
-  [ -n "$URL" ] && break
+for i in $(seq 1 90); do
+  C=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -1)
+  if [ -n "$C" ] && [ "$C" != "$LASTV" ]; then URL="$C"; break; fi
   sleep 1
 done
-[ -z "$URL" ] && { echo "register: no tunnel URL after 60s"; exit 1; }
-
-# Skip if unchanged.
-[ -f "$LAST" ] && [ "$(cat "$LAST")" = "$URL" ] && { echo "register: unchanged ($URL)"; exit 0; }
+[ -z "$URL" ] && { echo "register: no new tunnel URL after 90s (last=$LASTV)"; exit 0; }
 
 CODE=$(curl -s -o /tmp/vc_resp.json -w '%{http_code}' -m 25 -X PATCH \
   "https://api.vercel.com/v1/edge-config/${EDGE_CONFIG_ID}/items?teamId=${VERCEL_TEAM_ID}" \

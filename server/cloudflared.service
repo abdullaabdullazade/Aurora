@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare quick tunnel for Aurora resolver
+After=network.target aurora.service
+
+[Service]
+# Runs as root so ExecStartPost can drive systemctl (trigger aurora-register).
+# Truncate the logfile each start so the newest trycloudflare URL is unambiguous.
+ExecStartPre=/bin/sh -c ': > /home/azureuser/cloudflared.log'
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://localhost:8000 --logfile /home/azureuser/cloudflared.log --loglevel info
+# After the tunnel comes up, push the (new) URL to Vercel Edge Config.
+ExecStartPost=-/usr/bin/systemctl restart --no-block aurora-register.service
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
