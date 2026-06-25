@@ -33,7 +33,7 @@ class HomeScreen extends ConsumerWidget {
         slivers: [
           SliverAppBar(
             pinned: true,
-            expandedHeight: 128,
+            expandedHeight: 156,
             backgroundColor: AppColors.voidBlack,
             surfaceTintColor: Colors.transparent,
             title: Text('Aurora',
@@ -44,11 +44,39 @@ class HomeScreen extends ConsumerWidget {
               collapseMode: CollapseMode.parallax,
               background: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Sp.lg, 56, Sp.lg, 0),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Text('Good evening',
-                        style: text.displayLarge?.copyWith(letterSpacing: -1)),
+                  padding: const EdgeInsets.fromLTRB(Sp.lg, 44, Sp.lg, Sp.md),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Eyebrow: icon + weekday/date.
+                      Row(children: [
+                        Icon(_greetIcon(),
+                            size: 15, color: AppColors.accentBright),
+                        const SizedBox(width: 6),
+                        Text(_todayLabel().toUpperCase(),
+                            style: text.labelSmall?.copyWith(
+                                color: AppColors.textTertiary,
+                                letterSpacing: 1.6,
+                                fontWeight: FontWeight.w700)),
+                      ]),
+                      const SizedBox(height: 2),
+                      // Greeting with a soft white→accent gradient.
+                      ShaderMask(
+                        shaderCallback: (b) => const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.textPrimary,
+                            AppColors.accentBright,
+                          ],
+                        ).createShader(b),
+                        child: Text(_greeting(),
+                            style: text.displayLarge?.copyWith(
+                                letterSpacing: -1, color: Colors.white)),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -107,6 +135,33 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _greeting() {
+  final h = DateTime.now().hour;
+  if (h < 5) return 'Good night';
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  if (h < 21) return 'Good evening';
+  return 'Good night';
+}
+
+IconData _greetIcon() {
+  final h = DateTime.now().hour;
+  if (h < 5 || h >= 21) return Icons.nightlight_round;
+  if (h < 12) return Icons.wb_twilight_rounded;
+  if (h < 17) return Icons.wb_sunny_rounded;
+  return Icons.nights_stay_rounded;
+}
+
+String _todayLabel() {
+  final n = DateTime.now();
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const mons = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  return '${days[n.weekday - 1]}, ${mons[n.month - 1]} ${n.day}';
 }
 
 void _showNotifications(BuildContext context, WidgetRef ref) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../widgets/glass.dart';
@@ -17,36 +18,35 @@ class LyricsSheet extends ConsumerStatefulWidget {
 }
 
 class _LyricsSheetState extends ConsumerState<LyricsSheet> {
-  final _scroll = ScrollController();
+  // Index-based controller → exact jump to the active line regardless of how
+  // many visual rows each (possibly wrapped) lyric occupies.
+  final _itemScroll = ItemScrollController();
   int _active = -1;
   DateTime? _userScrolledAt; // suspend auto-scroll after a manual scroll
   bool _firstScroll = true; // first jump (on open) is instant
 
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
+  // Active line sits ~38% from the top — reads naturally, with upcoming lines
+  // visible below.
+  static const double _align = 0.38;
 
-  void _autoScroll(int index, int count) {
-    if (!_scroll.hasClients || index < 0) return;
+  void _autoScroll(int index) {
+    if (!_itemScroll.isAttached || index < 0) return;
     // Don't yank the view while the user is reading/scrolling manually.
     final last = _userScrolledAt;
     if (last != null &&
         DateTime.now().difference(last) < const Duration(seconds: 6)) {
       return;
     }
-    // Roughly center the active line.
-    final target = (index * 46.0) - 160;
-    final max = _scroll.position.maxScrollExtent;
-    final to = target.clamp(0.0, max);
     if (_firstScroll) {
       _firstScroll = false;
-      _scroll.jumpTo(to); // open straight at the current line
+      _itemScroll.jumpTo(index: index, alignment: _align); // open at current line
     } else {
-      _scroll.animateTo(to,
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutCubic);
+      _itemScroll.scrollTo(
+        index: index,
+        alignment: _align,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
     }
   }
 
@@ -120,7 +120,7 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                   if (active != _active) {
                     _active = active;
                     WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _autoScroll(active, r.synced.length));
+                        (_) => _autoScroll(active));
                   }
                   return NotificationListener<ScrollNotification>(
                     onNotification: (n) {
@@ -130,8 +130,10 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                       }
                       return false;
                     },
-                    child: ListView.builder(
-                    controller: _scroll,
+                    child: ScrollablePositionedList.builder(
+                    itemScrollController: _itemScroll,
+                    initialScrollIndex: active, // open already at the current line
+                    initialAlignment: _align,
                     padding:
                         const EdgeInsets.fromLTRB(Sp.xl, 0, Sp.xl, Sp.xxxl),
                     itemCount: r.synced.length,
