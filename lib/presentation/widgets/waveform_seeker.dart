@@ -138,7 +138,7 @@ class _WavePainter extends CustomPainter {
       final x = i * slot + slot / 2;
       final paint = Paint()
         ..color =
-            filled ? accent : AppColors.textPrimary.withValues(alpha: 0.14)
+            filled ? accent : AppColors.textPrimary.withValues(alpha: 0.26)
         ..strokeWidth = barW
         ..strokeCap = StrokeCap.round;
       if (filled) {

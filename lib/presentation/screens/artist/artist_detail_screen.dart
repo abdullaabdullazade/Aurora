@@ -48,14 +48,7 @@ class ArtistDetailScreen extends ConsumerWidget {
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          accent.withValues(alpha: 0.7),
-                          AppColors.voidBlack
-                        ],
-                      ),
+                      gradient: AppColors.artHeader(accent),
                     ),
                   ),
                   SafeArea(
@@ -67,7 +60,7 @@ class ArtistDetailScreen extends ConsumerWidget {
                           height: 116,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: AppColors.accentSweep,
+                            gradient: AppColors.accentSweepOf(accent),
                             boxShadow: [
                               BoxShadow(
                                   color: accent.withValues(alpha: 0.5),

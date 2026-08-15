@@ -85,8 +85,10 @@ class _NavItem extends StatelessWidget {
                     : AppColors.textSecondary,
                 shadows: selected
                     ? [
-                        const Shadow(
-                            color: AppColors.accentBright, blurRadius: 14),
+                        Shadow(
+                            color: AppColors.accentBright
+                                .withValues(alpha: 0.55),
+                            blurRadius: 10),
                       ]
                     : null,
               ),

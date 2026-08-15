@@ -113,21 +113,48 @@ class HomeScreen extends ConsumerWidget {
           if (!online)
             const SliverToBoxAdapter(child: _OfflineSanctuary()),
           const SliverToBoxAdapter(child: SizedBox(height: Sp.sm)),
+          // Each section retries only its own provider — a failed carousel
+          // should not refetch (or wipe) the ones that loaded fine.
           SliverToBoxAdapter(
             child: SectionCarousel(
-                title: 'Trending now', data: trending, cardSize: 168),
+              title: 'Trending now',
+              data: trending,
+              cardSize: 168,
+              emptyTitle: 'No trends right now',
+              emptySubtitle: 'Pull down to refresh in a moment.',
+              onRetry: () => ref.invalidate(trendingProvider),
+            ),
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
-                title: '🔥 Top Charts', data: charts, cardSize: 168),
+              title: '🔥 Top Charts',
+              data: charts,
+              cardSize: 168,
+              emptyTitle: 'Charts are empty',
+              emptySubtitle: 'Nothing came back from the server.',
+              onRetry: () => ref.invalidate(topChartsProvider),
+            ),
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
-                title: 'Recently played', data: recent, cardSize: 140),
+              title: 'Recently played',
+              data: recent,
+              cardSize: 140,
+              emptyTitle: 'Nothing here yet',
+              emptySubtitle:
+                  'Start listening and your recent tracks land here.',
+              onRetry: () => ref.invalidate(recentlyPlayedProvider),
+            ),
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
-                title: 'Quick downloads', data: trending, cardSize: 140),
+              title: 'Quick downloads',
+              data: trending,
+              cardSize: 140,
+              emptyTitle: 'Nothing to download',
+              emptySubtitle: 'Suggestions appear once trends load.',
+              onRetry: () => ref.invalidate(trendingProvider),
+            ),
           ),
           // Bottom padding so content clears mini-player + nav bar.
           const SliverToBoxAdapter(child: SizedBox(height: 180)),

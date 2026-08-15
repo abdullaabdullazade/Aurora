@@ -61,8 +61,11 @@ class _AmbientPainter extends CustomPainter {
     canvas.drawRect(
         rect, Paint()..color = dark ? AppColors.voidBlack : const Color(0xFFF3F3F6));
 
-    final a1 = dark ? 0.30 : 0.16;
-    final a2 = dark ? 0.12 : 0.08;
+    // Kept deliberately faint: these blobs are brand atmosphere behind the
+    // content, and at their old strength they read as two big empty circles
+    // competing with the cards in front of them.
+    final a1 = dark ? 0.16 : 0.10;
+    final a2 = dark ? 0.07 : 0.05;
     _blob(
       canvas,
       Offset(size.width * (0.2 + 0.15 * t), size.height * 0.18),

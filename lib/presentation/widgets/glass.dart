@@ -9,7 +9,15 @@ class Glass extends StatelessWidget {
   final Widget child;
   final BorderRadius radius;
   final double blur;
+
+  /// White sheen laid over the scrim — the "glass" highlight.
   final double opacity;
+
+  /// Dark base under the sheen. Blur preserves the *color* of whatever is
+  /// behind it, so over album art a white-only fill turned the surface into a
+  /// bright rainbow smear. The scrim neutralises that before the sheen lands.
+  final double scrim;
+
   final EdgeInsetsGeometry? padding;
   final Border? border;
 
@@ -19,6 +27,7 @@ class Glass extends StatelessWidget {
     this.radius = Radii.rLg,
     this.blur = 14,
     this.opacity = 0.08,
+    this.scrim = 0.62,
     this.padding,
     this.border,
   });
@@ -33,7 +42,10 @@ class Glass extends StatelessWidget {
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: opacity),
+              color: Color.alphaBlend(
+                Colors.white.withValues(alpha: opacity),
+                AppColors.voidBlack.withValues(alpha: scrim),
+              ),
               borderRadius: radius,
               border: border ??
                   Border.all(color: AppColors.glassStroke, width: 1),

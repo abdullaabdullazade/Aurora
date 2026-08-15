@@ -47,11 +47,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [seed.withValues(alpha: 0.6), AppColors.voidBlack],
-                      ),
+                      gradient: AppColors.artHeader(seed),
                     ),
                   ),
                   Center(

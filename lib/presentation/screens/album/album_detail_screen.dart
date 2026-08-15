@@ -42,14 +42,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          seed.accent.withValues(alpha: 0.65),
-                          AppColors.voidBlack
-                        ],
-                      ),
+                      gradient: AppColors.artHeader(seed.accent),
                     ),
                   ),
                   Center(
