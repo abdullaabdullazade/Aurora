@@ -18,20 +18,47 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
   Timer? _debounce;
   int _filter = 0;
   static const _filters = ['Tracks', 'Playlists', 'Albums'];
 
+  /// Raw field text. The provider holds the *debounced* query, so this is what
+  /// autocomplete has to follow — otherwise suggestions lag a keystroke behind.
+  String _typed = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() {}));
+  }
+
   void _onChanged(String value) {
+    setState(() => _typed = value);
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
       ref.read(searchQueryProvider.notifier).state = value;
     });
   }
 
+  /// Runs [q] now: no debounce, remembered in history, keyboard dismissed.
+  Future<void> _commit(String q) async {
+    final query = q.trim();
+    if (query.isEmpty) return;
+    _debounce?.cancel();
+    _ctrl.text = query;
+    _ctrl.selection = TextSelection.collapsed(offset: query.length);
+    setState(() => _typed = query);
+    ref.read(searchQueryProvider.notifier).state = query;
+    _focus.unfocus();
+    await ref.read(localStoreProvider).pushSearch(query);
+    ref.invalidate(searchHistoryProvider);
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -60,7 +87,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.symmetric(horizontal: Sp.lg),
               child: TextField(
                 controller: _ctrl,
+                focusNode: _focus,
                 onChanged: _onChanged,
+                onSubmitted: _commit,
                 textInputAction: TextInputAction.search,
                 style: text.bodyLarge,
                 cursorColor: AppColors.accentBright,
@@ -74,12 +103,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ?.copyWith(color: AppColors.textTertiary),
                   icon: const Icon(Icons.search_rounded,
                       color: AppColors.textSecondary),
-                  suffixIcon: query.isEmpty
+                  suffixIcon: _typed.isEmpty
                       ? null
                       : IconButton(
                           icon: const Icon(Icons.close_rounded, size: 20),
                           onPressed: () {
                             _ctrl.clear();
+                            setState(() => _typed = '');
                             ref.read(searchQueryProvider.notifier).state = '';
                           },
                         ),
@@ -104,7 +134,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           const SizedBox(height: Sp.sm),
           Expanded(
-            child: query.isEmpty
+            child: _focus.hasFocus
+                // While the field is focused the useful thing to show is where
+                // to go next, not stale results for a half-typed word.
+                ? _Assist(
+                    typed: _typed,
+                    onPick: _commit,
+                  )
+                : query.isEmpty
                 ? _Empty(text: text)
                 : results.when(
                     loading: () => ListView.builder(
@@ -178,6 +215,85 @@ class _FilterChip extends StatelessWidget {
           label,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: selected ? Colors.black : AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+}
+
+/// Focused-field panel: past queries when the box is empty, live autocomplete
+/// once there is something to complete.
+class _Assist extends ConsumerWidget {
+  final String typed;
+  final ValueChanged<String> onPick;
+  const _Assist({required this.typed, required this.onPick});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
+    final q = typed.trim();
+
+    if (q.length < 2) {
+      final history = ref.watch(searchHistoryProvider);
+      if (history.isEmpty) return _Empty(text: text);
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.sm, Sp.lg, 180),
+        children: [
+          Row(
+            children: [
+              Text('Recent searches', style: text.labelLarge),
+              const Spacer(),
+              GestureDetector(
+                onTap: () async {
+                  await ref.read(localStoreProvider).clearSearchHistory();
+                  ref.invalidate(searchHistoryProvider);
+                },
+                child: Text('Clear',
+                    style: text.labelSmall
+                        ?.copyWith(color: AppColors.accentBright)),
+              ),
+            ],
+          ),
+          const SizedBox(height: Sp.sm),
+          for (final h in history)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: const Icon(Icons.history_rounded,
+                  color: AppColors.textSecondary),
+              title: Text(h, style: text.bodyLarge),
+              trailing: IconButton(
+                icon: const Icon(Icons.close_rounded,
+                    size: 18, color: AppColors.textTertiary),
+                onPressed: () async {
+                  await ref.read(localStoreProvider).removeSearch(h);
+                  ref.invalidate(searchHistoryProvider);
+                },
+              ),
+              onTap: () => onPick(h),
+            ),
+        ],
+      );
+    }
+
+    final suggestions = ref.watch(searchSuggestionsProvider(q));
+    return suggestions.when(
+      // No spinner and no error state: autocomplete that flickers or shouts is
+      // worse than autocomplete that is quietly absent.
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (list) => ListView.builder(
+        padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.sm, Sp.lg, 180),
+        itemCount: list.length,
+        itemBuilder: (_, i) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          leading: const Icon(Icons.search_rounded,
+              color: AppColors.textSecondary),
+          title: Text(list[i], style: text.bodyLarge),
+          trailing: const Icon(Icons.north_west_rounded,
+              size: 16, color: AppColors.textTertiary),
+          onTap: () => onPick(list[i]),
         ),
       ),
     );

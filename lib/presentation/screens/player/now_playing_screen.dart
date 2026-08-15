@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/dynamic_palette.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/track.dart';
 import '../../widgets/album_pulse.dart';
@@ -66,13 +68,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         fit: StackFit.expand,
         children: [
           // Layered blurred-artwork background + dark gradient veil.
+          // The blur is held at low opacity on purpose: it is texture, not a
+          // background. At full strength a bright cover pushes the composite
+          // luminance up far enough to sink the secondary labels drawn on it.
           RepaintBoundary(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
-              child: Artwork(
-                track: track,
-                size: media.size.width * 1.3,
-                radius: BorderRadius.zero,
+            child: Opacity(
+              opacity: 0.35,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+                child: Artwork(
+                  track: track,
+                  size: media.size.width * 1.3,
+                  radius: BorderRadius.zero,
+                ),
               ),
             ),
           ),
@@ -409,8 +417,8 @@ class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final sleeping = ref.watch(
-        playerControllerProvider.select((s) => s.sleepRemaining != null));
+    final sleeping = ref.watch(playerControllerProvider
+        .select((s) => s.sleepRemaining != null || s.sleepAtTrackEnd));
     return Row(
       children: [
         _RoundIcon(
@@ -604,7 +612,7 @@ class _PlayButtonState extends State<_PlayButton> {
           height: 60,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: AppColors.accentSweep,
+            gradient: AppColors.accentSweepOf(widget.accent),
             boxShadow: [
               BoxShadow(
                 color: widget.accent.withValues(alpha: 0.55),
@@ -614,10 +622,10 @@ class _PlayButtonState extends State<_PlayButton> {
             ],
           ),
           child: widget.loading
-              ? const Padding(
-                  padding: EdgeInsets.all(18),
+              ? Padding(
+                  padding: const EdgeInsets.all(18),
                   child: CircularProgressIndicator(
-                      strokeWidth: 2.6, color: Colors.black),
+                      strokeWidth: 2.6, color: Tone.onColor(widget.accent)),
                 )
               : AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
@@ -628,7 +636,7 @@ class _PlayButtonState extends State<_PlayButton> {
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                     key: ValueKey(widget.isPlaying),
-                    color: Colors.black,
+                    color: Tone.onColor(widget.accent),
                     size: 32,
                   ),
                 ),
@@ -704,6 +712,8 @@ class _BottomBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final track = ref.watch(playerControllerProvider).current;
+    final radio =
+        ref.watch(playerControllerProvider.select((s) => s.radio));
     if (track == null) return const SizedBox.shrink();
     return Glass(
       radius: const BorderRadius.all(Radius.circular(24)),
@@ -717,6 +727,25 @@ class _BottomBar extends ConsumerWidget {
               icon: Icons.lyrics_outlined,
               label: 'Lyrics',
               onTap: () => _sheet(context, const LyricsSheet())),
+          if (AppConfig.radioEnabled)
+          _Action(
+            icon: radio ? Icons.radio_rounded : Icons.radio_outlined,
+            label: 'Radio',
+            active: radio,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ref.read(playerControllerProvider.notifier).toggleRadio();
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppColors.elevated,
+                  content: Text(radio
+                      ? 'Radio off — queue stays as it is'
+                      : 'Radio on — station built from “${track.title}”'),
+                ));
+            },
+          ),
           _Action(
               icon: Icons.playlist_add_rounded,
               label: 'Add',
@@ -735,25 +764,30 @@ class _Action extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool active;
   const _Action(
-      {required this.icon, required this.label, required this.onTap});
+      {required this.icon,
+      required this.label,
+      required this.onTap,
+      this.active = false});
   @override
   Widget build(BuildContext context) {
+    final tint = active ? AppColors.accentBright : null;
     return InkWell(
       borderRadius: Radii.rMd,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: Sp.lg, vertical: Sp.xs),
+        padding: const EdgeInsets.symmetric(horizontal: Sp.md, vertical: Sp.xs),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: AppColors.textPrimary),
+            Icon(icon, size: 22, color: tint ?? AppColors.textPrimary),
             const SizedBox(height: 4),
             Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary)),
+                    color: tint ?? AppColors.textSecondary)),
           ],
         ),
       ),

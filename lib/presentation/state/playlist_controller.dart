@@ -21,6 +21,21 @@ class PlaylistController extends Notifier<List<Playlist>> {
     return p;
   }
 
+  /// Creates a playlist already filled in. An import writes 50+ tracks at
+  /// once; routing that through [addTrack] would persist the whole box once
+  /// per track.
+  Future<Playlist> createWith(String name, List<Track> tracks) async {
+    final seen = <String>{};
+    final unique = [
+      for (final t in tracks)
+        if (seen.add(t.id)) t,
+    ];
+    final p = Playlist(id: _newId(name), name: name.trim(), tracks: unique);
+    await ref.read(localStoreProvider).savePlaylist(p);
+    state = [...state, p];
+    return p;
+  }
+
   Future<void> rename(String id, String name) async {
     await _update(id, (p) => p.copyWith(name: name.trim()));
   }

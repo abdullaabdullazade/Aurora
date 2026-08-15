@@ -64,4 +64,39 @@ class ApiMusicRepository implements MusicRepository {
   @override
   Future<Uri> resolveStream(Track track, {bool audioOnly = true}) async =>
       Uri.parse('${AppConfig.apiBase}/stream?v=${track.id}');
+
+  @override
+  Future<List<Track>> related(Track track, {int limit = 15}) async {
+    final res = await _dio.get('/related',
+        queryParameters: {'v': track.id, 'limit': limit});
+    final list = (res.data as List).cast<Map<String, dynamic>>();
+    return list.map(_fromJson).toList(growable: false);
+  }
+
+  @override
+  Future<({String title, List<Track> tracks})> importPlaylist(
+      String url) async {
+    final res = await _dio.get('/playlist',
+        queryParameters: {'url': url},
+        options: Options(receiveTimeout: const Duration(seconds: 90)));
+    final map = res.data as Map<String, dynamic>;
+    final list = (map['tracks'] as List).cast<Map<String, dynamic>>();
+    return (
+      title: (map['title'] as String?) ?? 'Imported playlist',
+      tracks: list.map(_fromJson).toList(growable: false),
+    );
+  }
+
+  @override
+  Future<List<String>> suggest(String query) async {
+    if (query.trim().isEmpty) return const [];
+    try {
+      final res = await _dio.get('/suggest',
+          queryParameters: {'q': query},
+          options: Options(receiveTimeout: const Duration(seconds: 6)));
+      return (res.data as List).cast<String>();
+    } catch (_) {
+      return const [];
+    }
+  }
 }

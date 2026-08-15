@@ -263,39 +263,141 @@ def health() -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.get("/search")
-def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
-    opts = {"extract_flat": True}
+def _entry(e: dict[str, Any]) -> dict[str, Any]:
+    """One flat yt-dlp entry -> the track shape the app expects."""
+    # extract_flat omits duration/views for some entries — keep them anyway.
+    thumbs = e.get("thumbnails") or []
+    thumb = thumbs[-1]["url"] if thumbs else (
+        f"https://i.ytimg.com/vi/{e['id']}/hqdefault.jpg"
+    )
+    return {
+        "id": e["id"],
+        "title": e.get("title") or "Unknown",
+        "artist": e.get("uploader") or e.get("channel")
+        or e.get("uploader_id") or "Unknown",
+        "duration": int(e.get("duration") or 0),
+        "thumbnail": thumb,
+        "views": int(e.get("view_count") or 0),
+        "channelUrl": e.get("channel_url") or e.get("uploader_url"),
+    }
+
+
+def _entries(info: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        _entry(e)
+        for e in (info.get("entries") or [])
+        if e and e.get("id")
+    ]
+
+
+def _flat_opts() -> dict[str, Any]:
+    opts: dict[str, Any] = {"extract_flat": True}
     proxy = _pick_proxy()
     if proxy:
         opts["proxy"] = proxy
+    return opts
+
+
+@app.get("/search")
+def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
     query = q if q.startswith("ytsearch") else f"ytsearch{limit}:{q}"
     try:
-        with _ydl(opts) as ydl:
+        with _ydl(_flat_opts()) as ydl:
             info = ydl.extract_info(query, download=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"search failed: {e}") from e
+    return _entries(info)
+
+
+@app.get("/related")
+def related(v: str, limit: int = 15) -> list[dict[str, Any]]:
+    """Radio continuation for a video.
+
+    YouTube's own mix playlist (RD<id>) is the best "more like this" signal
+    there is — it is what the site plays when autoplay is on. If the mix is
+    unavailable (rare, but happens for obscure uploads) fall back to a plain
+    search seeded with the video's title so autoplay never dead-ends.
+    """
+    opts = _flat_opts()
+    opts["noplaylist"] = False
+    opts["playlistend"] = limit + 1
 
     out: list[dict[str, Any]] = []
-    for e in info.get("entries") or []:
-        if not e or e.get("id") is None:
-            continue
-        # extract_flat omits duration/views for some entries — keep them anyway.
-        thumbs = e.get("thumbnails") or []
-        thumb = thumbs[-1]["url"] if thumbs else (
-            f"https://i.ytimg.com/vi/{e['id']}/hqdefault.jpg"
-        )
-        out.append({
-            "id": e["id"],
-            "title": e.get("title") or "Unknown",
-            "artist": e.get("uploader") or e.get("channel")
-            or e.get("uploader_id") or "Unknown",
-            "duration": int(e.get("duration") or 0),
-            "thumbnail": thumb,
-            "views": int(e.get("view_count") or 0),
-            "channelUrl": e.get("channel_url") or e.get("uploader_url"),
-        })
-    return out
+    try:
+        with _ydl(opts) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={v}&list=RD{v}",
+                download=False,
+            )
+        # The seed itself heads the mix — the caller is already playing it.
+        out = [t for t in _entries(info) if t["id"] != v]
+    except Exception:  # noqa: BLE001
+        out = []
+
+    if not out:
+        try:
+            with _ydl(_flat_opts()) as ydl:
+                seed = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={v}", download=False)
+            title = _clean(seed.get("title") or "")
+            artist = seed.get("uploader") or ""
+            if title or artist:
+                with _ydl(_flat_opts()) as ydl:
+                    info = ydl.extract_info(
+                        f"ytsearch{limit}:{artist} {title}".strip(),
+                        download=False,
+                    )
+                out = [t for t in _entries(info) if t["id"] != v]
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"related failed: {e}") from e
+
+    return out[:limit]
+
+
+@app.get("/playlist")
+def playlist(url: str, limit: int = 100) -> dict[str, Any]:
+    """Import a YouTube playlist / album / mix URL as a track list."""
+    opts = _flat_opts()
+    opts["noplaylist"] = False
+    opts["playlistend"] = limit
+    try:
+        with _ydl(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"playlist failed: {e}") from e
+
+    tracks = _entries(info)
+    if not tracks:
+        raise HTTPException(404, "no tracks in that link")
+    return {
+        "title": info.get("title") or "Imported playlist",
+        "uploader": info.get("uploader") or info.get("channel") or "",
+        "tracks": tracks,
+    }
+
+
+@app.get("/suggest")
+def suggest(q: str) -> list[str]:
+    """YouTube's own search autocomplete. Returns [] rather than failing —
+    a suggestion strip must never break the search box."""
+    if not q.strip():
+        return []
+    try:
+        with httpx.Client(timeout=6) as cx:
+            r = cx.get(
+                "https://suggestqueries-clients6.youtube.com/complete/search",
+                params={"client": "youtube", "ds": "yt", "q": q},
+            )
+        # JSONP: window.google.ac.h([...])
+        body = r.text
+        start, end = body.find("("), body.rfind(")")
+        if start < 0 or end < 0:
+            return []
+        import json
+        data = json.loads(body[start + 1:end])
+        return [s[0] for s in data[1] if isinstance(s, list) and s]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 @app.get("/lyrics")

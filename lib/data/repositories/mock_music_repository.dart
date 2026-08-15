@@ -32,4 +32,25 @@ class MockMusicRepository implements MusicRepository {
   Future<Uri> resolveStream(Track track, {bool audioOnly = true}) =>
       // Placeholder playable asset; real impl uses YoutubeDatasource.
       _delayed(Uri.parse('asset:///audio/${track.id}.mp3'), 120);
+
+  @override
+  Future<List<Track>> related(Track track, {int limit = 15}) => _delayed(
+        MockTracks.all.where((t) => t.id != track.id).take(limit).toList(),
+        400,
+      );
+
+  @override
+  Future<({String title, List<Track> tracks})> importPlaylist(String url) =>
+      _delayed((title: 'Imported playlist', tracks: MockTracks.all), 600);
+
+  @override
+  Future<List<String>> suggest(String query) => _delayed(
+        MockTracks.all
+            .map((t) => t.title)
+            .where((t) =>
+                t.toLowerCase().contains(query.trim().toLowerCase()))
+            .take(8)
+            .toList(),
+        150,
+      );
 }

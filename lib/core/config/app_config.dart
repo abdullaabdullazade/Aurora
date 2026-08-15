@@ -4,9 +4,29 @@ abstract final class AppConfig {
   /// Set this to your deployed registry, e.g. https://aurora-registry.vercel.app
   static const String registryUrl = 'https://vercel-registry-five.vercel.app';
 
+  /// Local-development mode: talk to a resolver running on this machine and
+  /// skip the registry lookup entirely.
+  ///
+  ///   flutter run --dart-define=AURORA_LOCAL=true
+  ///   flutter run --dart-define=AURORA_LOCAL=true --dart-define=AURORA_API=http://192.168.0.5:8000
+  static const bool useLocalServer = bool.fromEnvironment('AURORA_LOCAL');
+
+  /// 10.0.2.2 is the Android emulator's alias for the host machine's loopback,
+  /// so this reaches `uvicorn main:app --host 0.0.0.0 --port 8000` on the PC.
+  static const String localApiBase =
+      String.fromEnvironment('AURORA_API', defaultValue: 'http://10.0.2.2:8000');
+
+  /// Radio / autoplay continuation. Off hides the Radio controls and stops the
+  /// queue from extending itself:
+  ///
+  ///   flutter run --dart-define=AURORA_RADIO=false
+  static const bool radioEnabled =
+      bool.fromEnvironment('AURORA_RADIO', defaultValue: true);
+
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.
   ///
   /// Android emulator → http://10.0.2.2:8000 · physical phone → PC LAN IP.
-  static String apiBase = 'http://192.168.0.193:8000';
+  static String apiBase =
+      useLocalServer ? localApiBase : 'http://192.168.0.193:8000';
 }

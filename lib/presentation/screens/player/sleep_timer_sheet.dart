@@ -23,6 +23,8 @@ class SleepTimerSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final remaining =
         ref.watch(playerControllerProvider.select((s) => s.sleepRemaining));
+    final atTrackEnd =
+        ref.watch(playerControllerProvider.select((s) => s.sleepAtTrackEnd));
     final ctrl = ref.read(playerControllerProvider.notifier);
     final text = Theme.of(context).textTheme;
 
@@ -50,7 +52,11 @@ class SleepTimerSheet extends ConsumerWidget {
                   const SizedBox(width: Sp.sm),
                   Text('Sleep timer', style: text.titleLarge),
                   const Spacer(),
-                  if (remaining != null)
+                  if (atTrackEnd)
+                    Text('End of track',
+                        style: text.titleMedium
+                            ?.copyWith(color: AppColors.accentBright))
+                  else if (remaining != null)
                     Text(Fmt.duration(remaining),
                         style: text.titleMedium
                             ?.copyWith(color: AppColors.accentBright)),
@@ -72,11 +78,22 @@ class SleepTimerSheet extends ConsumerWidget {
                         Navigator.pop(context);
                       },
                     ),
+                  // A clock is the wrong unit when you just want the song you
+                  // are hearing to be the last one.
+                  _Chip(
+                    label: 'End of track',
+                    selected: atTrackEnd,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      ctrl.sleepAfterTrack();
+                      Navigator.pop(context);
+                    },
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: Sp.lg),
-            if (remaining != null)
+            if (remaining != null || atTrackEnd)
               Padding(
                 padding: const EdgeInsets.fromLTRB(Sp.lg, 0, Sp.lg, Sp.lg),
                 child: SizedBox(
@@ -115,7 +132,9 @@ class SleepTimerSheet extends ConsumerWidget {
 class _Chip extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  const _Chip({required this.label, required this.onTap});
+  final bool selected;
+  const _Chip(
+      {required this.label, required this.onTap, this.selected = false});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -125,10 +144,15 @@ class _Chip extends StatelessWidget {
             const EdgeInsets.symmetric(horizontal: Sp.lg, vertical: Sp.md),
         decoration: BoxDecoration(
           borderRadius: Radii.rPill,
-          color: AppColors.glassFill,
-          border: Border.all(color: AppColors.glassStroke),
+          color: selected ? AppColors.accentSoft : AppColors.glassFill,
+          border: Border.all(
+              color: selected
+                  ? AppColors.accentBright.withValues(alpha: 0.5)
+                  : AppColors.glassStroke),
         ),
-        child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+        child: Text(label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected ? AppColors.accentBright : null)),
       ),
     );
   }

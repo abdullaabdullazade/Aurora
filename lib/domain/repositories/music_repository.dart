@@ -15,4 +15,15 @@ abstract interface class MusicRepository {
 
   /// Locally indexed downloads (offline-first).
   Future<List<Track>> downloads();
+
+  /// Continuation for [track] — what a station would play next. Backs both
+  /// radio mode and end-of-queue autoplay.
+  Future<List<Track>> related(Track track, {int limit = 15});
+
+  /// Imports a YouTube playlist / album / mix link.
+  Future<({String title, List<Track> tracks})> importPlaylist(String url);
+
+  /// Search autocomplete. Returns an empty list rather than throwing — a
+  /// suggestion strip must never break typing.
+  Future<List<String>> suggest(String query);
 }

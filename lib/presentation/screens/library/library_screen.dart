@@ -139,14 +139,144 @@ class _NewPlaylistButton extends ConsumerWidget {
     return IconButton(
       icon: const Icon(Icons.add_circle_outline_rounded,
           color: AppColors.textPrimary, size: 28),
-      onPressed: () async {
-        final name = await _askName(context);
-        if (name == null || name.trim().isEmpty) return;
-        final p = await ref.read(playlistsProvider.notifier).create(name);
-        onCreated(p.id);
-      },
+      onPressed: () => _menu(context, ref),
     );
   }
+
+  void _menu(BuildContext context, WidgetRef ref) => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (sheet) => Glass(
+          radius: const BorderRadius.vertical(top: Radii.xl),
+          blur: 30,
+          opacity: 0.16,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: Sp.md),
+                Container(
+                    width: 44,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                        color: AppColors.glassStroke,
+                        borderRadius: Radii.rPill)),
+                ListTile(
+                  leading: const Icon(Icons.playlist_add_rounded,
+                      color: AppColors.textPrimary),
+                  title: const Text('New playlist'),
+                  onTap: () async {
+                    Navigator.pop(sheet);
+                    final name = await _askName(context);
+                    if (name == null || name.trim().isEmpty) return;
+                    final p =
+                        await ref.read(playlistsProvider.notifier).create(name);
+                    onCreated(p.id);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.link_rounded,
+                      color: AppColors.textPrimary),
+                  title: const Text('Import from link'),
+                  subtitle: const Text('YouTube playlist, album or mix URL'),
+                  onTap: () {
+                    Navigator.pop(sheet);
+                    _import(context, ref);
+                  },
+                ),
+                const SizedBox(height: Sp.sm),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Future<void> _import(BuildContext context, WidgetRef ref) async {
+    final url = await _askUrl(context);
+    if (url == null || url.trim().isEmpty) return;
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.elevated,
+      duration: Duration(seconds: 30),
+      content: Row(children: [
+        SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.accentBright)),
+        SizedBox(width: Sp.md),
+        Text('Importing playlist…'),
+      ]),
+    ));
+
+    try {
+      final res =
+          await ref.read(musicRepositoryProvider).importPlaylist(url.trim());
+      final p = await ref
+          .read(playlistsProvider.notifier)
+          .createWith(res.title, res.tracks);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.elevated,
+          content: Text(
+              'Imported “${res.title}” · ${res.tracks.length} tracks'),
+        ));
+      onCreated(p.id);
+    } catch (e) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.elevated,
+          content: Text('Could not read that link'),
+        ));
+    }
+  }
+
+  Future<String?> _askUrl(BuildContext context) => showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          final ctrl = TextEditingController();
+          return AlertDialog(
+            backgroundColor: AppColors.elevated,
+            shape: const RoundedRectangleBorder(borderRadius: Radii.rLg),
+            title: const Text('Import playlist',
+                style: TextStyle(color: AppColors.textPrimary)),
+            content: TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              cursorColor: AppColors.accentBright,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: 'https://youtube.com/playlist?list=…',
+                hintStyle: TextStyle(color: AppColors.textTertiary),
+                enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.glassStroke)),
+                focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.accentBright)),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
+              FilledButton(
+                style:
+                    FilledButton.styleFrom(backgroundColor: AppColors.accent),
+                onPressed: () => Navigator.pop(ctx, ctrl.text),
+                child: const Text('Import'),
+              ),
+            ],
+          );
+        },
+      );
 
   Future<String?> _askName(BuildContext context) => showDialog<String>(
         context: context,

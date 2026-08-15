@@ -11,8 +11,11 @@ class LocalStore {
   static const _favoritesBox = 'favorites';
   static const _settingsBox = 'settings';
   static const _lyricsBox = 'lyrics';
+  static const _statsBox = 'stats';
   static const _recentsKey = 'list';
   static const _maxRecents = 30;
+  static const _searchHistoryKey = 'search_history';
+  static const _maxSearchHistory = 12;
 
   late final Box<dynamic> _playlists;
   late final Box<dynamic> _recents;
@@ -20,6 +23,7 @@ class LocalStore {
   late final Box<dynamic> _favorites;
   late final Box<dynamic> _settings;
   late final Box<dynamic> _lyrics;
+  late final Box<dynamic> _stats;
 
   Future<void> init() async {
     await Hive.initFlutter();
@@ -29,6 +33,7 @@ class LocalStore {
     _favorites = await Hive.openBox(_favoritesBox);
     _settings = await Hive.openBox(_settingsBox);
     _lyrics = await Hive.openBox(_lyricsBox);
+    _stats = await Hive.openBox(_statsBox);
   }
 
   // --- Offline lyrics (saved alongside downloads) ------------------------
@@ -99,10 +104,87 @@ class LocalStore {
     await _recents.put(_recentsKey, trimmed);
   }
 
+  // --- Search history ----------------------------------------------------
+  List<String> searchHistory() =>
+      ((_settings.get(_searchHistoryKey) as List?) ?? const [])
+          .map((e) => e as String)
+          .toList();
+
+  Future<void> pushSearch(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    final list = searchHistory()
+      ..removeWhere((e) => e.toLowerCase() == q.toLowerCase());
+    list.insert(0, q);
+    await _settings.put(
+        _searchHistoryKey, list.take(_maxSearchHistory).toList());
+  }
+
+  Future<void> removeSearch(String query) async {
+    final list = searchHistory()..remove(query);
+    await _settings.put(_searchHistoryKey, list);
+  }
+
+  Future<void> clearSearchHistory() => _settings.delete(_searchHistoryKey);
+
+  // --- Listening stats ---------------------------------------------------
+  /// One row per track: how many times it started and how long it was heard.
+  /// Recents are capped at 30 and reordered, so they cannot answer "what did
+  /// I actually play this year" — this box is the durable record.
+  Map<String, dynamic> _statRow(String id) {
+    final raw = _stats.get(id);
+    return raw == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(raw as Map);
+  }
+
+  Future<void> bumpPlay(Track t) async {
+    final row = _statRow(t.id);
+    // t.toJson() owns 'seconds' (the track's duration) — listening time lives
+    // under its own key so the row stays a valid Track.fromJson input.
+    await _stats.put(t.id, {
+      ...t.toJson(),
+      'count': ((row['count'] as num?)?.toInt() ?? 0) + 1,
+      'seconds_played': (row['seconds_played'] as num?)?.toInt() ?? 0,
+      'last': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> addListenTime(String id, int seconds) async {
+    if (seconds <= 0) return;
+    final row = _statRow(id);
+    if (row.isEmpty) return;
+    row['seconds_played'] =
+        ((row['seconds_played'] as num?)?.toInt() ?? 0) + seconds;
+    await _stats.put(id, row);
+  }
+
+  /// Raw stat rows, newest listen first.
+  List<Map<String, dynamic>> stats() {
+    final rows = _stats.values
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    rows.sort((a, b) =>
+        ((b['last'] as num?) ?? 0).compareTo((a['last'] as num?) ?? 0));
+    return rows;
+  }
+
+  Future<void> clearStats() => _stats.clear();
+
   // --- Downloads ---------------------------------------------------------
   List<Track> downloads() => _downloads.values
       .map((e) => Track.fromJson(Map<dynamic, dynamic>.from(e as Map)))
       .toList();
 
   Future<void> saveDownload(Track t) => _downloads.put(t.id, t.toJson());
+
+  // --- Simple bool/string settings ---------------------------------------
+  bool flag(String key, {bool fallback = false}) =>
+      (_settings.get(key) as bool?) ?? fallback;
+
+  Future<void> setFlag(String key, bool value) => _settings.put(key, value);
+
+  int? number(String key) => (_settings.get(key) as num?)?.toInt();
+
+  Future<void> setNumber(String key, int value) => _settings.put(key, value);
 }

@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../core/theme/dynamic_palette.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -28,6 +30,17 @@ class PlayerState {
   final Duration? sleepRemaining;
   final double speed;
 
+  /// Station mode: the queue keeps growing from the seed track, so playback
+  /// never runs out. Distinct from autoplay, which only fills in at the end of
+  /// a finite queue the user built themselves.
+  final bool radio;
+
+  /// A related-tracks fetch is in flight (shown in the queue sheet).
+  final bool extending;
+
+  /// Stop playback when the current track ends, instead of at a wall clock.
+  final bool sleepAtTrackEnd;
+
   const PlayerState({
     this.queue = const [],
     this.index = 0,
@@ -41,6 +54,9 @@ class PlayerState {
     this.volume = 1.0,
     this.sleepRemaining,
     this.speed = 1.0,
+    this.radio = false,
+    this.extending = false,
+    this.sleepAtTrackEnd = false,
   });
 
   Track? get current =>
@@ -72,6 +88,9 @@ class PlayerState {
     Duration? sleepRemaining,
     bool clearSleep = false,
     double? speed,
+    bool? radio,
+    bool? extending,
+    bool? sleepAtTrackEnd,
   }) =>
       PlayerState(
         queue: queue ?? this.queue,
@@ -87,6 +106,12 @@ class PlayerState {
         sleepRemaining:
             clearSleep ? null : (sleepRemaining ?? this.sleepRemaining),
         speed: speed ?? this.speed,
+        radio: radio ?? this.radio,
+        extending: extending ?? this.extending,
+        // Independent of clearSleep: "stop after this track" is set *while*
+        // the countdown is being cleared, so folding them together would
+        // switch the flag off the moment it is switched on.
+        sleepAtTrackEnd: sleepAtTrackEnd ?? this.sleepAtTrackEnd,
       );
 }
 
@@ -110,6 +135,7 @@ class PlayerController extends Notifier<PlayerState> {
     _wireAudioSession();
     ref.onDispose(() {
       _sleepTimer?.cancel();
+      _fadeTimer?.cancel();
       _player.dispose();
     });
     return const PlayerState();
@@ -125,9 +151,32 @@ class PlayerController extends Notifier<PlayerState> {
 
   int _loadToken = 0;
 
+  /// Position of the last tick, used to accumulate real listening time.
+  /// Seeks and track switches produce jumps, so only small forward deltas
+  /// count — otherwise scrubbing would inflate the stats.
+  Duration _lastTick = Duration.zero;
+  String? _lastTickId;
+  int _pendingSeconds = 0;
+
   void _wireStreams() {
     _player.positionStream.listen((p) {
       if (!state.isLoading) state = state.copyWith(position: p);
+      _maybeFadeOut();
+      final id = state.current?.id;
+      if (id != null && id == _lastTickId) {
+        final delta = p - _lastTick;
+        if (delta > Duration.zero && delta < const Duration(seconds: 2)) {
+          _pendingSeconds += delta.inMilliseconds;
+          if (_pendingSeconds >= 15000) {
+            ref
+                .read(localStoreProvider)
+                .addListenTime(id, _pendingSeconds ~/ 1000);
+            _pendingSeconds = 0;
+          }
+        }
+      }
+      _lastTickId = id;
+      _lastTick = p;
     });
     _player.durationStream.listen((d) {
       if (d != null) state = state.copyWith(duration: d);
@@ -153,11 +202,60 @@ class PlayerController extends Notifier<PlayerState> {
       index: startAt.clamp(0, tracks.length - 1),
       position: Duration.zero,
       duration: Duration.zero,
+      radio: false,
     );
     await _loadCurrent(autoplay: true);
   }
 
   void playSingle(Track track) => playQueue([track]);
+
+  // --- Radio / autoplay ---------------------------------------------------
+
+  /// Starts a station seeded by [seed]: plays it immediately, then keeps the
+  /// queue topped up with related tracks for as long as radio stays on.
+  Future<void> startRadio(Track seed) async {
+    state = state.copyWith(
+      queue: [seed],
+      index: 0,
+      position: Duration.zero,
+      duration: Duration.zero,
+      radio: true,
+    );
+    await _loadCurrent(autoplay: true);
+    await _extendQueue();
+  }
+
+  /// Turns the current queue into a station (or back into a plain queue).
+  Future<void> toggleRadio() async {
+    final on = !state.radio;
+    state = state.copyWith(radio: on);
+    if (on) await _extendQueue();
+  }
+
+  /// Appends related tracks to the end of the queue, skipping anything already
+  /// queued so a station never loops back on itself.
+  Future<void> _extendQueue({int want = 12}) async {
+    if (!AppConfig.radioEnabled) return;
+    final seed = state.current;
+    if (seed == null || state.extending) return;
+    state = state.copyWith(extending: true);
+    try {
+      final more =
+          await ref.read(musicRepositoryProvider).related(seed, limit: want);
+      final have = state.queue.map((t) => t.id).toSet();
+      final fresh = more.where((t) => !have.contains(t.id)).toList();
+      if (fresh.isNotEmpty) {
+        state = state.copyWith(queue: [...state.queue, ...fresh]);
+      }
+    } catch (e) {
+      debugPrint('[player] radio extend failed: $e');
+    } finally {
+      state = state.copyWith(extending: false);
+    }
+  }
+
+  /// True while the queue is close enough to the end that it needs refilling.
+  bool get _runningDry => state.index >= state.queue.length - 2;
 
   Future<void> toggle() async {
     if (_player.playing) {
@@ -170,6 +268,10 @@ class PlayerController extends Notifier<PlayerState> {
   Future<void> next() async {
     if (state.queue.isEmpty) return;
     final last = state.index >= state.queue.length - 1;
+    if (last && _continuesForever) {
+      await _continueAtEnd();
+      return;
+    }
     if (last && state.repeat == LoopMode.off && state.queue.length > 1) {
       // wrap so "next" always does something
     } else if (last && state.queue.length == 1) {
@@ -180,6 +282,8 @@ class PlayerController extends Notifier<PlayerState> {
         position: Duration.zero,
         duration: Duration.zero);
     await _loadCurrent(autoplay: true);
+    // Refill ahead of time so the next skip never waits on the network.
+    if (state.radio && _runningDry) unawaited(_extendQueue());
   }
 
   Future<void> previous() async {
@@ -198,11 +302,47 @@ class PlayerController extends Notifier<PlayerState> {
       _player.seek(state.total * fraction.clamp(0.0, 1.0));
 
   void _onComplete() {
+    // "Stop after this track" wins over every continuation rule.
+    if (state.sleepAtTrackEnd) {
+      _sleepTimer?.cancel();
+      _player.pause();
+      _player.setVolume(_baseVolume);
+      state = state.copyWith(clearSleep: true, sleepAtTrackEnd: false);
+      NotificationService.instance.showNow(
+          2001, '😴 Sleep timer ended', 'Playback paused. Sweet dreams.');
+      return;
+    }
     if (state.repeat == LoopMode.one) {
       _player.seek(Duration.zero);
       _player.play();
-    } else {
-      next();
+      return;
+    }
+    final last = state.index >= state.queue.length - 1;
+    if (last && state.repeat == LoopMode.off && _continuesForever) {
+      _continueAtEnd();
+      return;
+    }
+    next();
+  }
+
+  /// Radio always continues; a plain queue continues only if autoplay is on.
+  bool get _continuesForever =>
+      AppConfig.radioEnabled &&
+      (state.radio ||
+          ref.read(localStoreProvider).flag('autoplay', fallback: true));
+
+  /// End of a finite queue: pull the next tracks in before advancing, so the
+  /// music does not stop and the user does not get silently wrapped back to
+  /// track 1 as if they had asked for it.
+  Future<void> _continueAtEnd() async {
+    final before = state.queue.length;
+    await _extendQueue();
+    if (state.queue.length > before) {
+      state = state.copyWith(
+          index: before, position: Duration.zero, duration: Duration.zero);
+      await _loadCurrent(autoplay: true);
+    } else if (state.queue.length > 1) {
+      await next(); // nothing related came back — fall back to wrapping
     }
   }
 
@@ -211,6 +351,7 @@ class PlayerController extends Notifier<PlayerState> {
     final track = state.current;
     if (track == null) return;
     final token = ++_loadToken;
+    _cancelFade();
     state = state.copyWith(isLoading: true, position: Duration.zero);
     _recordRecent(track);
     try {
@@ -223,7 +364,12 @@ class PlayerController extends Notifier<PlayerState> {
           ja.AudioSource.uri(uri, tag: _media(track)));
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
-      if (autoplay) await _player.play();
+      if (autoplay) {
+        _fadeIn();
+        await _player.play();
+      } else {
+        await _player.setVolume(_baseVolume);
+      }
       _applyPalette(track);
     } catch (e, st) {
       debugPrint('[player] load failed: $e\n$st');
@@ -233,10 +379,71 @@ class PlayerController extends Notifier<PlayerState> {
     }
   }
 
+  // --- Crossfade ----------------------------------------------------------
+  // One player can only render one stream, so this is a fade-out into a
+  // fade-in rather than two tracks overlapping. It removes the hard cut
+  // between songs, which is what the setting is for; a true overlap would
+  // need a second AudioPlayer, and just_audio_background only accepts one.
+  Timer? _fadeTimer;
+  bool _fadingOut = false;
+
+  void _maybeFadeOut() {
+    if (_fadingOut || !state.isPlaying || state.isLoading) return;
+    if (!ref.read(crossfadeProvider)) return;
+    // The sleep timer owns the volume during its own fade — don't fight it.
+    if (state.sleepRemaining != null) return;
+    final total = state.total;
+    if (total <= Duration.zero) return;
+    final window = Duration(seconds: ref.read(crossfadeSecondsProvider));
+    final left = total - state.position;
+    if (left <= Duration.zero || left > window) return;
+    _fadingOut = true;
+    _ramp(from: _baseVolume, to: 0, over: left);
+  }
+
+  void _fadeIn() {
+    if (!ref.read(crossfadeProvider)) return;
+    _ramp(
+      from: 0,
+      to: _baseVolume,
+      over: Duration(seconds: ref.read(crossfadeSecondsProvider)),
+    );
+  }
+
+  void _ramp({
+    required double from,
+    required double to,
+    required Duration over,
+  }) {
+    _fadeTimer?.cancel();
+    const step = Duration(milliseconds: 60);
+    final steps = (over.inMilliseconds / step.inMilliseconds).ceil();
+    if (steps <= 1) {
+      _player.setVolume(to);
+      return;
+    }
+    var i = 0;
+    _player.setVolume(from);
+    _fadeTimer = Timer.periodic(step, (t) {
+      i++;
+      final v = from + (to - from) * (i / steps);
+      _player.setVolume(v.clamp(0.0, 1.0));
+      if (i >= steps) t.cancel();
+    });
+  }
+
+  void _cancelFade() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _fadingOut = false;
+  }
+
   // --- Volume ------------------------------------------------------------
   Future<void> setVolume(double v) async {
     final vol = v.clamp(0.0, 1.0);
     _baseVolume = vol;
+    // A deliberate volume change outranks any fade in flight.
+    _cancelFade();
     await _player.setVolume(vol);
     state = state.copyWith(volume: vol);
   }
@@ -281,16 +488,26 @@ class PlayerController extends Notifier<PlayerState> {
   // --- Sleep timer (with 10s fade-out) ----------------------------------
   static const _fadeWindow = Duration(seconds: 10);
 
+  /// Stop once the current track finishes. No countdown and no fade — the
+  /// track's own ending is the fade.
+  void sleepAfterTrack() {
+    _sleepTimer?.cancel();
+    _sleepEnd = null;
+    _player.setVolume(_baseVolume);
+    state = state.copyWith(clearSleep: true, sleepAtTrackEnd: true);
+  }
+
   void setSleep(Duration? duration) {
     _sleepTimer?.cancel();
     if (duration == null) {
       _sleepEnd = null;
       _player.setVolume(_baseVolume);
-      state = state.copyWith(clearSleep: true);
+      state = state.copyWith(clearSleep: true, sleepAtTrackEnd: false);
       return;
     }
     _sleepEnd = DateTime.now().add(duration);
-    state = state.copyWith(sleepRemaining: duration);
+    state =
+        state.copyWith(sleepRemaining: duration, sleepAtTrackEnd: false);
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final left = _sleepEnd!.difference(DateTime.now());
       if (left <= Duration.zero) {
@@ -312,8 +529,11 @@ class PlayerController extends Notifier<PlayerState> {
 
   // --- internal ----------------------------------------------------------
   Future<void> _recordRecent(Track t) async {
-    await ref.read(localStoreProvider).pushRecent(t);
+    final store = ref.read(localStoreProvider);
+    await store.pushRecent(t);
+    await store.bumpPlay(t);
     ref.invalidate(recentlyPlayedProvider);
+    ref.invalidate(listeningStatsProvider);
   }
 
   Future<void> _applyPalette(Track track) async {
@@ -324,16 +544,14 @@ class PlayerController extends Notifier<PlayerState> {
         size: const Size(120, 120),
         maximumColorCount: 8,
       );
-      final Color? raw =
-          palette.vibrantColor?.color ?? palette.dominantColor?.color;
+      final Color? raw = palette.vibrantColor?.color ??
+          palette.lightVibrantColor?.color ??
+          palette.dominantColor?.color;
       if (raw == null) return;
-      // Normalize so the accent is always vivid + readable on the dark veil
-      // (raw pale-yellow palettes clashed with UI elements).
-      final hsl = HSLColor.fromColor(raw);
-      final c = hsl
-          .withSaturation(hsl.saturation.clamp(0.55, 1.0))
-          .withLightness(hsl.lightness.clamp(0.45, 0.62))
-          .toColor();
+      // Store the *mark* color only. The screen wash is derived from it at
+      // paint time (Tone.backdrop) — painting this vivid color full-screen is
+      // what used to bury every secondary label.
+      final c = Tone.accent(raw);
       final list = [...state.queue];
       final i = list.indexWhere((e) => e.id == track.id);
       if (i >= 0) {

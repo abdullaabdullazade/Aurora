@@ -7,6 +7,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../widgets/glass.dart';
 import '../../state/lyrics_controller.dart';
 import '../../state/player_controller.dart';
+import 'lyric_card_sheet.dart';
 
 /// Real synced lyrics (lrclib via resolver). Highlights + auto-scrolls the
 /// active line; tap a line to seek to it. Falls back to plain text, then to a
@@ -79,6 +80,10 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
               padding: const EdgeInsets.all(Sp.lg),
               child: Row(children: [
                 Text('Lyrics', style: text.titleLarge),
+                const SizedBox(width: Sp.sm),
+                Text('· hold a line to share',
+                    style: text.labelSmall
+                        ?.copyWith(color: AppColors.textTertiary)),
                 const Spacer(),
                 lyrics.maybeWhen(
                   data: (r) => r.isSynced
@@ -151,6 +156,22 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
                                 .read(playerControllerProvider.notifier)
                                 .seek(r.synced[i].time * 1000 / total);
                           }
+                        },
+                        // Long-press turns this line (and the ones after it)
+                        // into a shareable card.
+                        onLongPress: () {
+                          final track =
+                              ref.read(playerControllerProvider).current;
+                          if (track == null) return;
+                          HapticFeedback.mediumImpact();
+                          LyricCardSheet.show(
+                            context,
+                            track: track,
+                            lines: [
+                              for (final l in r.synced) l.text,
+                            ],
+                            startIndex: i,
+                          );
                         },
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 280),

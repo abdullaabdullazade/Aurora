@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../state/favorites_controller.dart';
+import '../../state/providers.dart';
 import '../../state/settings_controller.dart';
 import 'equalizer_screen.dart';
+import 'stats_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -11,6 +15,8 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
+    final crossfade = ref.watch(crossfadeProvider);
+    final seconds = ref.watch(crossfadeSecondsProvider);
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -49,12 +55,104 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const EqualizerScreen())),
           ),
+          if (AppConfig.radioEnabled)
+            _Switch(
+              icon: Icons.play_circle_outline_rounded,
+              title: 'Autoplay',
+              subtitle: 'Keep playing similar tracks when the queue ends',
+              value: ref.watch(autoplayProvider),
+              onChanged: (v) => ref.read(autoplayProvider.notifier).set(v),
+            ),
+          _Switch(
+            icon: Icons.multitrack_audio_rounded,
+            title: 'Crossfade',
+            subtitle: crossfade
+                ? 'Tracks fade out and in over ${seconds}s'
+                : 'Tracks change instantly',
+            value: crossfade,
+            onChanged: (v) => ref.read(crossfadeProvider.notifier).set(v),
+          ),
+          if (crossfade)
+            Padding(
+              padding: const EdgeInsets.only(left: 60, right: Sp.sm),
+              child: Slider(
+                value: seconds.toDouble(),
+                min: 2,
+                max: 12,
+                divisions: 10,
+                label: '${seconds}s',
+                onChanged: (v) => ref
+                    .read(crossfadeSecondsProvider.notifier)
+                    .set(v.round()),
+              ),
+            ),
+          const SizedBox(height: Sp.xl),
+          Text('Library', style: text.labelLarge),
+          const SizedBox(height: Sp.sm),
+          _Switch(
+            icon: Icons.download_for_offline_outlined,
+            title: 'Download liked songs',
+            subtitle: 'Keep every song you like available offline',
+            value: ref.watch(autoDownloadFavoritesProvider),
+            onChanged: (v) async {
+              await ref.read(autoDownloadFavoritesProvider.notifier).set(v);
+              // Turning it on should also catch up on everything already
+              // liked, not just apply from here forward.
+              if (v) {
+                await ref
+                    .read(favoritesProvider.notifier)
+                    .downloadAllLiked();
+              }
+            },
+          ),
+          _Tile(
+            icon: Icons.insights_rounded,
+            title: 'Listening stats',
+            subtitle: 'Top artists, most played, time listened',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const StatsScreen())),
+          ),
           const SizedBox(height: Sp.xl),
           Center(
             child: Text('Aurora Music · v1.0', style: text.labelSmall),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _Switch extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _Switch({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: value,
+      onChanged: onChanged,
+      activeThumbColor: AppColors.accentBright,
+      secondary: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+            borderRadius: Radii.rSm, gradient: AppColors.accentSweep),
+        child: Icon(icon, color: Colors.black),
+      ),
+      title: Text(title, style: text.titleMedium),
+      subtitle: Text(subtitle, style: text.bodyMedium),
     );
   }
 }
