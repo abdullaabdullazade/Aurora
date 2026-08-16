@@ -459,7 +459,7 @@ class PlayerController extends Notifier<PlayerState> {
       final list = [...state.queue];
       final i = list.indexWhere((e) => e.id == track.id);
       if (i >= 0) {
-        list[i] = list[i].copyWith(accent: c);
+        list[i] = list[i].copyWith(accent: c, paletteReady: true);
         state = state.copyWith(queue: list);
       }
     } catch (_) {/* keep deterministic accent */}

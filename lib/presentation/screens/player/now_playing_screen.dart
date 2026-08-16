@@ -75,17 +75,28 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
               opacity: 0.35,
               child: ImageFiltered(
                 imageFilter: ImageFilter.blur(sigmaX: 45, sigmaY: 45),
+                // Square, sized off the LONGEST edge. Sizing it off the width
+                // left the bottom of a tall screen outside the artwork, and
+                // that edge showed up as a hard horizontal seam across the
+                // controls where the tint stopped.
                 child: Artwork(
                   track: track,
-                  size: media.size.width * 1.3,
+                  size: media.size.longestSide * 1.2,
                   radius: BorderRadius.zero,
                 ),
               ),
             ),
           ),
-          DecoratedBox(
-            decoration:
-                BoxDecoration(gradient: AppColors.artVeil(track.accent)),
+          // Neutral until the palette lands, then cross-faded into the
+          // artwork's hue. Painting the id-hash accent immediately put a
+          // teal wash under a blue cover while the track was still loading.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeOut,
+            decoration: BoxDecoration(
+              gradient: AppColors.artVeil(
+                  track.paletteReady ? track.accent : AppColors.base),
+            ),
           ),
           // A light extra scrim under the controls. It used to reach 60% black
           // from mid-screen down, which read as a separate black panel bolted

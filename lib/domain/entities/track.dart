@@ -13,6 +13,11 @@ class Track {
   /// Dominant color used for ambient backgrounds / glows.
   final Color accent;
 
+  /// True once [accent] came from the artwork itself. Until then it is the
+  /// deterministic id-hash colour, which has nothing to do with the cover —
+  /// fine for a small glow, wrong for a full-screen wash.
+  final bool paletteReady;
+
   /// Null while streaming-only; set once downloaded to disk.
   final String? localPath;
 
@@ -27,13 +32,15 @@ class Track {
     required this.duration,
     this.plays = 0,
     this.accent = const Color(0xFF1DB954),
+    this.paletteReady = false,
     this.localPath,
     this.channelUrl,
   });
 
   bool get isDownloaded => localPath != null;
 
-  Track copyWith({String? localPath, Color? accent}) => Track(
+  Track copyWith({String? localPath, Color? accent, bool? paletteReady}) =>
+      Track(
         id: id,
         title: title,
         artist: artist,
@@ -41,6 +48,7 @@ class Track {
         duration: duration,
         plays: plays,
         accent: accent ?? this.accent,
+        paletteReady: paletteReady ?? this.paletteReady,
         localPath: localPath ?? this.localPath,
         channelUrl: channelUrl,
       );
