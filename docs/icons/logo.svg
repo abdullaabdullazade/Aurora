@@ -1,29 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" fill="none">
   <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#141A2B"/>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16182A"/>
       <stop offset="1" stop-color="#0B0C10"/>
     </linearGradient>
-    <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="played" x1="0" y1="1" x2="1" y2="0">
       <stop offset="0" stop-color="#00E676"/>
-      <stop offset="0.55" stop-color="#1DB954"/>
-      <stop offset="1" stop-color="#7C4DFF"/>
+      <stop offset="0.6" stop-color="#1DB954"/>
+      <stop offset="1" stop-color="#64FFDA"/>
     </linearGradient>
-    <linearGradient id="aurora2" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#64FFDA" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#7C4DFF" stop-opacity="0.7"/>
-    </linearGradient>
+    <radialGradient id="glow" cx="0.58" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#1DB954" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#1DB954" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
-  <rect width="96" height="96" rx="24" fill="url(#sky)"/>
+  <rect width="96" height="96" rx="24" fill="url(#night)"/>
+  <rect width="96" height="96" rx="24" fill="url(#glow)"/>
 
-  <!-- aurora curtains -->
-  <path d="M14 62c8-22 20-34 34-34s26 10 34 26" stroke="url(#aurora)" stroke-width="7"
-        stroke-linecap="round" fill="none" opacity="0.95"/>
-  <path d="M20 72c7-18 17-28 28-28s21 8 28 20" stroke="url(#aurora2)" stroke-width="4"
-        stroke-linecap="round" fill="none" opacity="0.6"/>
+  <!-- The app's waveform seeker: bars mirrored around a midline, coloured up to
+       the playhead and dimmed after it. -->
+  <g fill="url(#played)">
+    <rect x="12" y="35" width="7" height="26" rx="3.5"/>
+    <rect x="23" y="27" width="7" height="42" rx="3.5"/>
+    <rect x="34" y="20" width="7" height="56" rx="3.5"/>
+    <rect x="45" y="16" width="7" height="64" rx="3.5"/>
+  </g>
+  <g fill="#FFFFFF" fill-opacity="0.22">
+    <rect x="56" y="23" width="7" height="50" rx="3.5"/>
+    <rect x="67" y="31" width="7" height="34" rx="3.5"/>
+    <rect x="78" y="39" width="7" height="18" rx="3.5"/>
+  </g>
 
-  <!-- note head + stem, sitting under the curtain -->
-  <circle cx="40" cy="66" r="8" fill="#FFFFFF"/>
-  <path d="M48 66V40l14-4v6l-14 4" fill="#FFFFFF"/>
+  <!-- playhead riding the midline at the boundary -->
+  <circle cx="54.5" cy="48" r="5.5" fill="#0B0C10"/>
+  <circle cx="54.5" cy="48" r="4" fill="#FFFFFF"/>
 </svg>
