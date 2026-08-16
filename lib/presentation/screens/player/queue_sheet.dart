@@ -18,10 +18,6 @@ class QueueSheet extends ConsumerWidget {
         ref.watch(playerControllerProvider.select((s) => s.queue));
     final activeIndex =
         ref.watch(playerControllerProvider.select((s) => s.index));
-    final radio =
-        ref.watch(playerControllerProvider.select((s) => s.radio));
-    final extending =
-        ref.watch(playerControllerProvider.select((s) => s.extending));
     final ctrl = ref.read(playerControllerProvider.notifier);
     final text = Theme.of(context).textTheme;
 
@@ -49,45 +45,7 @@ class QueueSheet extends ConsumerWidget {
               child: Row(
                 children: [
                   Text('Up Next', style: text.titleLarge),
-                  if (radio) ...[
-                    const SizedBox(width: Sp.sm),
-                    // A station queue grows on its own — say so, otherwise the
-                    // track count silently changing looks like a bug.
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: Sp.sm, vertical: 3),
-                      decoration: BoxDecoration(
-                        borderRadius: Radii.rPill,
-                        color: AppColors.accentSoft,
-                        border: Border.all(
-                            color: AppColors.accentBright
-                                .withValues(alpha: 0.4)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.radio_rounded,
-                              size: 12, color: AppColors.accentBright),
-                          const SizedBox(width: 4),
-                          Text('Radio',
-                              style: text.labelSmall?.copyWith(
-                                  color: AppColors.accentBright,
-                                  fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  ],
                   const Spacer(),
-                  if (extending) ...[
-                    const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 1.8,
-                          color: AppColors.accentBright),
-                    ),
-                    const SizedBox(width: Sp.sm),
-                  ],
                   Text('${queue.length} tracks', style: text.labelSmall),
                 ],
               ),

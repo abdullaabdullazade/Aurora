@@ -71,7 +71,9 @@ abstract final class AppColors {
         colors: [
           Tone.backdropHi(seed).withValues(alpha: 0.90),
           Tone.backdrop(seed).withValues(alpha: 0.94),
-          voidBlack.withValues(alpha: 0.98),
+          // Foot of the veil keeps the hue instead of collapsing to black —
+          // ending on voidBlack cut a hard dark band across the transport row.
+          Tone.backdropLo(seed).withValues(alpha: 0.97),
         ],
         stops: const [0.0, 0.55, 1.0],
       );

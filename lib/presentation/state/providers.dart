@@ -82,24 +82,6 @@ final listeningStatsProvider = Provider<List<PlayStat>>((ref) {
   }).toList();
 });
 
-/// Continuous playback at the end of a finite queue (radio is always on when
-/// explicitly started; this is the implicit case).
-class AutoplayController extends Notifier<bool> {
-  static const _key = 'autoplay';
-
-  @override
-  bool build() =>
-      ref.watch(localStoreProvider).flag(_key, fallback: true);
-
-  Future<void> set(bool value) async {
-    await ref.read(localStoreProvider).setFlag(_key, value);
-    state = value;
-  }
-}
-
-final autoplayProvider =
-    NotifierProvider<AutoplayController, bool>(AutoplayController.new);
-
 /// Keep every liked song available offline, downloading in the background.
 class AutoDownloadFavoritesController extends Notifier<bool> {
   static const _key = 'auto_download_favorites';

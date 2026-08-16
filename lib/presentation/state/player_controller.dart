@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
-import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/dynamic_palette.dart';
 import '../../domain/entities/track.dart';
@@ -30,14 +29,6 @@ class PlayerState {
   final Duration? sleepRemaining;
   final double speed;
 
-  /// Station mode: the queue keeps growing from the seed track, so playback
-  /// never runs out. Distinct from autoplay, which only fills in at the end of
-  /// a finite queue the user built themselves.
-  final bool radio;
-
-  /// A related-tracks fetch is in flight (shown in the queue sheet).
-  final bool extending;
-
   /// Stop playback when the current track ends, instead of at a wall clock.
   final bool sleepAtTrackEnd;
 
@@ -54,8 +45,6 @@ class PlayerState {
     this.volume = 1.0,
     this.sleepRemaining,
     this.speed = 1.0,
-    this.radio = false,
-    this.extending = false,
     this.sleepAtTrackEnd = false,
   });
 
@@ -88,8 +77,6 @@ class PlayerState {
     Duration? sleepRemaining,
     bool clearSleep = false,
     double? speed,
-    bool? radio,
-    bool? extending,
     bool? sleepAtTrackEnd,
   }) =>
       PlayerState(
@@ -106,8 +93,6 @@ class PlayerState {
         sleepRemaining:
             clearSleep ? null : (sleepRemaining ?? this.sleepRemaining),
         speed: speed ?? this.speed,
-        radio: radio ?? this.radio,
-        extending: extending ?? this.extending,
         // Independent of clearSleep: "stop after this track" is set *while*
         // the countdown is being cleared, so folding them together would
         // switch the flag off the moment it is switched on.
@@ -202,60 +187,11 @@ class PlayerController extends Notifier<PlayerState> {
       index: startAt.clamp(0, tracks.length - 1),
       position: Duration.zero,
       duration: Duration.zero,
-      radio: false,
     );
     await _loadCurrent(autoplay: true);
   }
 
   void playSingle(Track track) => playQueue([track]);
-
-  // --- Radio / autoplay ---------------------------------------------------
-
-  /// Starts a station seeded by [seed]: plays it immediately, then keeps the
-  /// queue topped up with related tracks for as long as radio stays on.
-  Future<void> startRadio(Track seed) async {
-    state = state.copyWith(
-      queue: [seed],
-      index: 0,
-      position: Duration.zero,
-      duration: Duration.zero,
-      radio: true,
-    );
-    await _loadCurrent(autoplay: true);
-    await _extendQueue();
-  }
-
-  /// Turns the current queue into a station (or back into a plain queue).
-  Future<void> toggleRadio() async {
-    final on = !state.radio;
-    state = state.copyWith(radio: on);
-    if (on) await _extendQueue();
-  }
-
-  /// Appends related tracks to the end of the queue, skipping anything already
-  /// queued so a station never loops back on itself.
-  Future<void> _extendQueue({int want = 12}) async {
-    if (!AppConfig.radioEnabled) return;
-    final seed = state.current;
-    if (seed == null || state.extending) return;
-    state = state.copyWith(extending: true);
-    try {
-      final more =
-          await ref.read(musicRepositoryProvider).related(seed, limit: want);
-      final have = state.queue.map((t) => t.id).toSet();
-      final fresh = more.where((t) => !have.contains(t.id)).toList();
-      if (fresh.isNotEmpty) {
-        state = state.copyWith(queue: [...state.queue, ...fresh]);
-      }
-    } catch (e) {
-      debugPrint('[player] radio extend failed: $e');
-    } finally {
-      state = state.copyWith(extending: false);
-    }
-  }
-
-  /// True while the queue is close enough to the end that it needs refilling.
-  bool get _runningDry => state.index >= state.queue.length - 2;
 
   Future<void> toggle() async {
     if (_player.playing) {
@@ -268,10 +204,6 @@ class PlayerController extends Notifier<PlayerState> {
   Future<void> next() async {
     if (state.queue.isEmpty) return;
     final last = state.index >= state.queue.length - 1;
-    if (last && _continuesForever) {
-      await _continueAtEnd();
-      return;
-    }
     if (last && state.repeat == LoopMode.off && state.queue.length > 1) {
       // wrap so "next" always does something
     } else if (last && state.queue.length == 1) {
@@ -282,8 +214,6 @@ class PlayerController extends Notifier<PlayerState> {
         position: Duration.zero,
         duration: Duration.zero);
     await _loadCurrent(autoplay: true);
-    // Refill ahead of time so the next skip never waits on the network.
-    if (state.radio && _runningDry) unawaited(_extendQueue());
   }
 
   Future<void> previous() async {
@@ -317,33 +247,7 @@ class PlayerController extends Notifier<PlayerState> {
       _player.play();
       return;
     }
-    final last = state.index >= state.queue.length - 1;
-    if (last && state.repeat == LoopMode.off && _continuesForever) {
-      _continueAtEnd();
-      return;
-    }
     next();
-  }
-
-  /// Radio always continues; a plain queue continues only if autoplay is on.
-  bool get _continuesForever =>
-      AppConfig.radioEnabled &&
-      (state.radio ||
-          ref.read(localStoreProvider).flag('autoplay', fallback: true));
-
-  /// End of a finite queue: pull the next tracks in before advancing, so the
-  /// music does not stop and the user does not get silently wrapped back to
-  /// track 1 as if they had asked for it.
-  Future<void> _continueAtEnd() async {
-    final before = state.queue.length;
-    await _extendQueue();
-    if (state.queue.length > before) {
-      state = state.copyWith(
-          index: before, position: Duration.zero, duration: Duration.zero);
-      await _loadCurrent(autoplay: true);
-    } else if (state.queue.length > 1) {
-      await next(); // nothing related came back — fall back to wrapping
-    }
   }
 
   // Resolves the current track on-device (residential IP) and plays it.

@@ -66,14 +66,6 @@ class ApiMusicRepository implements MusicRepository {
       Uri.parse('${AppConfig.apiBase}/stream?v=${track.id}');
 
   @override
-  Future<List<Track>> related(Track track, {int limit = 15}) async {
-    final res = await _dio.get('/related',
-        queryParameters: {'v': track.id, 'limit': limit});
-    final list = (res.data as List).cast<Map<String, dynamic>>();
-    return list.map(_fromJson).toList(growable: false);
-  }
-
-  @override
   Future<({String title, List<Track> tracks})> importPlaylist(
       String url) async {
     final res = await _dio.get('/playlist',

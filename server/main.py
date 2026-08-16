@@ -309,51 +309,6 @@ def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
     return _entries(info)
 
 
-@app.get("/related")
-def related(v: str, limit: int = 15) -> list[dict[str, Any]]:
-    """Radio continuation for a video.
-
-    YouTube's own mix playlist (RD<id>) is the best "more like this" signal
-    there is — it is what the site plays when autoplay is on. If the mix is
-    unavailable (rare, but happens for obscure uploads) fall back to a plain
-    search seeded with the video's title so autoplay never dead-ends.
-    """
-    opts = _flat_opts()
-    opts["noplaylist"] = False
-    opts["playlistend"] = limit + 1
-
-    out: list[dict[str, Any]] = []
-    try:
-        with _ydl(opts) as ydl:
-            info = ydl.extract_info(
-                f"https://www.youtube.com/watch?v={v}&list=RD{v}",
-                download=False,
-            )
-        # The seed itself heads the mix — the caller is already playing it.
-        out = [t for t in _entries(info) if t["id"] != v]
-    except Exception:  # noqa: BLE001
-        out = []
-
-    if not out:
-        try:
-            with _ydl(_flat_opts()) as ydl:
-                seed = ydl.extract_info(
-                    f"https://www.youtube.com/watch?v={v}", download=False)
-            title = _clean(seed.get("title") or "")
-            artist = seed.get("uploader") or ""
-            if title or artist:
-                with _ydl(_flat_opts()) as ydl:
-                    info = ydl.extract_info(
-                        f"ytsearch{limit}:{artist} {title}".strip(),
-                        download=False,
-                    )
-                out = [t for t in _entries(info) if t["id"] != v]
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(502, f"related failed: {e}") from e
-
-    return out[:limit]
-
-
 @app.get("/playlist")
 def playlist(url: str, limit: int = 100) -> dict[str, Any]:
     """Import a YouTube playlist / album / mix URL as a track list."""

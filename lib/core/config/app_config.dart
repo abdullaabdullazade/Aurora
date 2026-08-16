@@ -16,13 +16,6 @@ abstract final class AppConfig {
   static const String localApiBase =
       String.fromEnvironment('AURORA_API', defaultValue: 'http://10.0.2.2:8000');
 
-  /// Radio / autoplay continuation. Off hides the Radio controls and stops the
-  /// queue from extending itself:
-  ///
-  ///   flutter run --dart-define=AURORA_RADIO=false
-  static const bool radioEnabled =
-      bool.fromEnvironment('AURORA_RADIO', defaultValue: true);
-
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.
   ///

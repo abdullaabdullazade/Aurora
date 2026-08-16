@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/ringtone/ringtone_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/download_controller.dart';
-import '../../state/player_controller.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../album/album_detail_screen.dart';
@@ -149,18 +147,6 @@ class TrackContextSheet extends ConsumerWidget {
                     ));
                 },
               ),
-            if (AppConfig.radioEnabled)
-            _Item(
-              icon: Icons.radio_rounded,
-              label: 'Start radio',
-              onTap: () {
-                Navigator.pop(context);
-                HapticFeedback.selectionClick();
-                ref
-                    .read(playerControllerProvider.notifier)
-                    .startRadio(track);
-              },
-            ),
             _Item(
               icon: Icons.playlist_add_rounded,
               label: 'Add to playlist',

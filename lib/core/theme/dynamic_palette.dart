@@ -79,6 +79,13 @@ abstract final class Tone {
           ? const Color(0xFF000000)
           : const Color(0xFFFFFFFF);
 
+  /// Same hue as [backdrop] but a step darker — the foot of a veil. Fading to
+  /// pure black instead left a visible grey-to-black seam across the controls.
+  static Color backdropLo(Color source) {
+    final b = HSLColor.fromColor(backdrop(source));
+    return b.withLightness((b.lightness - 0.06).clamp(0.0, 1.0)).toColor();
+  }
+
   /// Same hue as [backdrop] but a step lighter — used for the top of a veil so
   /// the wash has depth instead of reading as one flat rectangle.
   static Color backdropHi(Color source) {

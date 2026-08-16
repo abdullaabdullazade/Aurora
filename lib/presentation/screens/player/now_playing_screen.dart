@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/dynamic_palette.dart';
@@ -88,13 +87,15 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
             decoration:
                 BoxDecoration(gradient: AppColors.artVeil(track.accent)),
           ),
-          // Extra bottom darkening for control legibility.
+          // A light extra scrim under the controls. It used to reach 60% black
+          // from mid-screen down, which read as a separate black panel bolted
+          // under the tinted half rather than one continuous wash.
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.center,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Color(0x99000000)],
+                colors: [Colors.transparent, Color(0x33000000)],
               ),
             ),
           ),
@@ -712,8 +713,6 @@ class _BottomBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final track = ref.watch(playerControllerProvider).current;
-    final radio =
-        ref.watch(playerControllerProvider.select((s) => s.radio));
     if (track == null) return const SizedBox.shrink();
     return Glass(
       radius: const BorderRadius.all(Radius.circular(24)),
@@ -727,25 +726,6 @@ class _BottomBar extends ConsumerWidget {
               icon: Icons.lyrics_outlined,
               label: 'Lyrics',
               onTap: () => _sheet(context, const LyricsSheet())),
-          if (AppConfig.radioEnabled)
-          _Action(
-            icon: radio ? Icons.radio_rounded : Icons.radio_outlined,
-            label: 'Radio',
-            active: radio,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              ref.read(playerControllerProvider.notifier).toggleRadio();
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: AppColors.elevated,
-                  content: Text(radio
-                      ? 'Radio off — queue stays as it is'
-                      : 'Radio on — station built from “${track.title}”'),
-                ));
-            },
-          ),
           _Action(
               icon: Icons.playlist_add_rounded,
               label: 'Add',
@@ -764,15 +744,10 @@ class _Action extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool active;
   const _Action(
-      {required this.icon,
-      required this.label,
-      required this.onTap,
-      this.active = false});
+      {required this.icon, required this.label, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final tint = active ? AppColors.accentBright : null;
     return InkWell(
       borderRadius: Radii.rMd,
       onTap: onTap,
@@ -781,13 +756,13 @@ class _Action extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: tint ?? AppColors.textPrimary),
+            Icon(icon, size: 22, color: AppColors.textPrimary),
             const SizedBox(height: 4),
             Text(label,
-                style: TextStyle(
+                style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: tint ?? AppColors.textSecondary)),
+                    color: AppColors.textSecondary)),
           ],
         ),
       ),

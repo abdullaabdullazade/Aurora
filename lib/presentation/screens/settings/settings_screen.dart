@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../state/favorites_controller.dart';
@@ -55,14 +54,6 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const EqualizerScreen())),
           ),
-          if (AppConfig.radioEnabled)
-            _Switch(
-              icon: Icons.play_circle_outline_rounded,
-              title: 'Autoplay',
-              subtitle: 'Keep playing similar tracks when the queue ends',
-              value: ref.watch(autoplayProvider),
-              onChanged: (v) => ref.read(autoplayProvider.notifier).set(v),
-            ),
           _Switch(
             icon: Icons.multitrack_audio_rounded,
             title: 'Crossfade',
