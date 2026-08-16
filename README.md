@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/icons/logo.svg" width="88" alt="Aurora Music logo">
+
 # Aurora Music
 
 ### Premium music player — YouTube-Music power, Spotify-grade soft-dark glass design.
