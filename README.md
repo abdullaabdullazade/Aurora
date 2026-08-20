@@ -1,15 +1,5 @@
 <div align="center">
 
-<img src="docs/icons/logo.svg" width="88" alt="Aurora Music logo">
-
-# Aurora Music
-
-### Premium music player — YouTube-Music power, Spotify-grade soft-dark glass design.
-
-real search & streaming · synced lyrics · offline downloads · on-device library · playlists
-
-</div>
-
 ---
 
 > **Flutter** front-end + a **Python (FastAPI + yt-dlp) resolver server**. All YouTube
@@ -23,100 +13,106 @@ Flutter app  ──HTTP──▶  FastAPI + yt-dlp  ──▶  YouTube
 
 ---
 
-## <img src="docs/icons/demo.svg" width="22" align="top"> Demo
+##  Demo
 
 **[▶ Watch the walkthrough (2:34, with sound)](docs/media/aurora-demo.mp4)**
 
-| Home | Now Playing | Synced lyrics | Lyric card |
-|---|---|---|---|
-| ![Home](docs/media/01-home.png) | ![Now Playing](docs/media/04-player.png) | ![Lyrics](docs/media/05-lyrics.png) | ![Lyric card](docs/media/06-lyric-card.png) |
-| **Autocomplete** | **Search results** | **Up Next** | **Track menu** |
-| ![Autocomplete](docs/media/02-search-suggestions.png) | ![Results](docs/media/03-search-results.png) | ![Queue](docs/media/07-queue.png) | ![Track menu](docs/media/11-download.png) |
-| **Liked** | **Sleep timer** | **Downloaded** | **Playlists** |
-| ![Liked](docs/media/10-liked.png) | ![Sleep timer](docs/media/12-sleep.png) | ![Downloaded](docs/media/13-downloaded.png) | ![Playlists](docs/media/16-playlists.png) |
-| **Imported playlist** | **Settings** | **Crossfade** | **Listening stats** |
-| ![Import](docs/media/15-import.png) | ![Settings](docs/media/08-settings.png) | ![Crossfade](docs/media/14-crossfade.png) | ![Stats](docs/media/09-stats.png) |
+| Home                                                  | Now Playing                                  | Synced lyrics                               | Lyric card                                  |
+| ----------------------------------------------------- | -------------------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| ![Home](docs/media/01-home.png)                       | ![Now Playing](docs/media/04-player.png)     | ![Lyrics](docs/media/05-lyrics.png)         | ![Lyric card](docs/media/06-lyric-card.png) |
+| **Autocomplete**                                | **Search results**                     | **Up Next**                           | **Track menu**                        |
+| ![Autocomplete](docs/media/02-search-suggestions.png) | ![Results](docs/media/03-search-results.png) | ![Queue](docs/media/07-queue.png)           | ![Track menu](docs/media/11-download.png)   |
+| **Liked**                                       | **Sleep timer**                        | **Downloaded**                        | **Playlists**                         |
+| ![Liked](docs/media/10-liked.png)                     | ![Sleep timer](docs/media/12-sleep.png)      | ![Downloaded](docs/media/13-downloaded.png) | ![Playlists](docs/media/16-playlists.png)   |
+| **Imported playlist**                           | **Settings**                           | **Crossfade**                         | **Listening stats**                   |
+| ![Import](docs/media/15-import.png)                   | ![Settings](docs/media/08-settings.png)      | ![Crossfade](docs/media/14-crossfade.png)   | ![Stats](docs/media/09-stats.png)           |
 
 ---
 
-## <img src="docs/icons/features.svg" width="22" align="top"> Features
+##  Features
 
-### <img src="docs/icons/search.svg" width="18" align="top"> Discovery & search
-- **Real YouTube search** through the resolver — debounced 350 ms, with Tracks / Playlists / Albums chips.
+###  Discovery & search
+
+- **Real YouTube search** through the resolver - debounced 350 ms, with Tracks / Playlists / Albums chips.
 - **Live autocomplete** from YouTube's own suggestion endpoint, plus a persisted **search history** (tap to re-run, per-item delete, one-tap clear).
 - **Home dashboard**: parallax `SliverAppBar` header, carousels for Trending, Top Charts, Recently played and Quick downloads.
-- **Three states, one height** per section — shimmer skeleton, empty card, error card with a **Retry pill** that refetches only that carousel. Nothing jumps when a future resolves.
+- **Three states, one height** per section - shimmer skeleton, empty card, error card with a **Retry pill** that refetches only that carousel. Nothing jumps when a future resolves.
 
-### <img src="docs/icons/play.svg" width="18" align="top"> Playback
-- Audio streams through the proxy as `audio/mp4` over HTTP **Range** — seeking is instant.
+###  Playback
+
+- Audio streams through the proxy as `audio/mp4` over HTTP **Range** - seeking is instant.
 - **Dual source**: remote YouTube and local device files run through the same `just_audio` engine.
 - Queue with **shuffle**, **repeat one/all** and **drag-to-reorder**.
 - **Crossfade**, 2–12 s, adjustable.
 - **Sleep timer**: 5–60 min presets or **End of track**, with a 10-second fade-out.
 - 5-band **equalizer**, playback **speed**, **output picker**, right-edge **volume drag HUD**.
 
-### <img src="docs/icons/player.svg" width="18" align="top"> The Now-Playing screen
+###  The Now-Playing screen
+
 - Full-screen layout: blurred artwork behind a colour veil derived from the cover.
-- **Two-role dynamic colour** — a vivid *accent* for marks, a deep same-hue *backdrop* for the wash, each held to its WCAG ratio. See [Colour](#colour).
-- **Waveform seeker** — custom-painted bars with an elastic bump near the finger and a haptic tick per bar.
+- **Two-role dynamic colour** - a vivid *accent* for marks, a deep same-hue *backdrop* for the wash, each held to its WCAG ratio. See [Colour](#colour).
+- **Waveform seeker** - custom-painted bars with an elastic bump near the finger and a haptic tick per bar.
 - **Album-art pulse**: orbiting particles and a breathing ring that speeds up while playing.
 - **Synced lyrics** (lrclib) that open at and follow the active line; tap a line to seek.
-- **Shareable lyric card** — hold a line, pick 1–6 lines, share as a rendered PNG.
+- **Shareable lyric card** - hold a line, pick 1–6 lines, share as a rendered PNG.
 
-### <img src="docs/icons/library.svg" width="18" align="top"> Library
+###  Library
+
 - Tabs: **Playlists · On device · Downloaded · Queue**.
-- **Import from a link** — paste a YouTube playlist / album / mix URL, get a local playlist.
+- **Import from a link** - paste a YouTube playlist / album / mix URL, get a local playlist.
 - **Liked Songs** with an optional **auto-download** switch that also backfills earlier likes.
 - **Downloads**: MP3 + lyrics, pause / resume / cancel, offline playback, set as **ringtone** or **alarm**.
 - **On-device music** via MediaStore, grouped by folder, with per-folder show/hide.
 - **Listening stats**: hours listened, play counts, top artists, most played.
 
-### <img src="docs/icons/offline.svg" width="18" align="top"> Offline Sanctuary
+###  Offline Sanctuary
+
 - Connectivity is watched live. Offline, non-downloaded items **fade to 40 %** and stop responding, and a breathing **"Offline Sanctuary"** pill appears under the header.
 
-### <img src="docs/icons/spark.svg" width="18" align="top"> Micro-interactions
-- **Aurora pull-to-refresh** — a glowing orb that scales with overscroll, not the Material spinner.
+###  Micro-interactions
+
+- **Aurora pull-to-refresh** - a glowing orb that scales with overscroll, not the Material spinner.
 - ~300 ms cross-fades, fade-up page transitions, `HapticFeedback` on play/pause, nav, scrub and toggles.
 - Real `BackdropFilter` glass everywhere, each surface in its own `RepaintBoundary`.
 
 ---
 
-## <img src="docs/icons/design.svg" width="22" align="top"> Design system — "Soft Dark / Glass"
+##  Design system - "Soft Dark / Glass"
 
-### <img src="docs/icons/contrast.svg" width="18" align="top"> Colour
+###  Colour
 
 Artwork colours have to fill two jobs that pull in opposite directions, and using one colour
 for both is what makes dynamic-theme players unreadable. `core/theme/dynamic_palette.dart`
 splits them and holds each to a WCAG 2.1 ratio:
 
-| Role | Derivation | Guarantee |
-|---|---|---|
-| `Tone.accent` | vivid, lightened until it passes | **≥ 3:1** vs the darkest surface (non-text UI minimum) |
-| `Tone.backdrop` | same hue, desaturated, darkened until it passes | **≥ 4.5:1** for the dimmest label drawn on it |
-| `Tone.onColor` | black or white, whichever scores higher | a legible glyph on any accent |
+| Role              | Derivation                                      | Guarantee                                                     |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| `Tone.accent`   | vivid, lightened until it passes                | **≥ 3:1** vs the darkest surface (non-text UI minimum) |
+| `Tone.backdrop` | same hue, desaturated, darkened until it passes | **≥ 4.5:1** for the dimmest label drawn on it          |
+| `Tone.onColor`  | black or white, whichever scores higher         | a legible glyph on any accent                                 |
 
-The veil stays neutral until `palette_generator` returns, then cross-fades in — before that a
+The veil stays neutral until `palette_generator` returns, then cross-fades in - before that a
 track only carries an id-hash colour, which has nothing to do with its cover.
 
 Glass surfaces also put a dark scrim under their white sheen: `BackdropFilter` preserves the
 colour behind it, so a white-only fill turns into a bright smear over album art.
 
-### <img src="docs/icons/tokens.svg" width="18" align="top"> Tokens
+###  Tokens
 
-| Token | Value | Use |
-|---|---|---|
-| Void black | `#0B0C10` | deepest background |
-| Base / Elevated | `#121212` · `#181818` · `#242424` | surfaces, cards |
-| Emerald / Neon | `#1DB954` · `#00E676` | accent, playback, glow |
-| Text | `#FFFFFF` · `#B3B3B3` · `#9A9A9A` | primary · muted · tertiary |
-| Glass stroke | `white @ 10 %` | hairline borders |
+| Token           | Value                                     | Use                          |
+| --------------- | ----------------------------------------- | ---------------------------- |
+| Void black      | `#0B0C10`                               | deepest background           |
+| Base / Elevated | `#121212` · `#181818` · `#242424` | surfaces, cards              |
+| Emerald / Neon  | `#1DB954` · `#00E676`                | accent, playback, glow       |
+| Text            | `#FFFFFF` · `#B3B3B3` · `#9A9A9A` | primary · muted · tertiary |
+| Glass stroke    | `white @ 10 %`                          | hairline borders             |
 
 **Type** Plus Jakarta Sans on a tight scale (`AppType`) · **Spacing/radii** 4-pt scale (`Sp`, `Radii`) ·
 **Motion** fade-through with a slight upward slide on route push.
 
 ---
 
-## <img src="docs/icons/architecture.svg" width="22" align="top"> Architecture — Clean Architecture + Riverpod
+##  Architecture - Clean Architecture + Riverpod
 
 ```
 lib/
@@ -129,18 +125,18 @@ lib/
     └── screens/   home · search · library · player · settings
 ```
 
-**Rules** — no business logic in views · presentation depends only on domain abstractions ·
+**Rules** - no business logic in views · presentation depends only on domain abstractions ·
 immutable entities · slivers and `RepaintBoundary` for smooth scroll.
 
-## <img src="docs/icons/stack.svg" width="22" align="top"> Tech stack
+##  Tech stack
 
 `flutter_riverpod` · `just_audio` · `audio_service` · `palette_generator` · `hive` ·
 `on_audio_query_pluse` · `connectivity_plus` · `dio` · `cached_network_image` · `shimmer` ·
-`google_fonts` — and **FastAPI + yt-dlp + httpx** on the server.
+`google_fonts` - and **FastAPI + yt-dlp + httpx** on the server.
 
 ---
 
-## <img src="docs/icons/server.svg" width="22" align="top"> The resolver server (`/server`)
+##  The resolver server (`/server`)
 
 Client-side scraping gets rate-limited and `403`'d per device IP and breaks whenever YouTube
 changes. `yt-dlp` is the most robust extractor available, so it runs server-side: one stable IP,
@@ -157,29 +153,39 @@ GET /suggest?q=…             → search autocomplete (returns [] on failure, n
 
 ```bash
 cd server
+cp .env.example .env
+# Edit .env to add your REGISTRY_URL and REGISTER_SECRET (optional)
 python -m pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
-## <img src="docs/icons/run.svg" width="22" align="top"> Run the app
+##  Run the app
 
 Needs **Flutter 3.27+** (`Color.withValues`, AGP-9 toolchain).
 
+First, set up your environment variables:
+
 ```bash
-flutter pub get
-flutter run
+cp .env.example .env
+# Edit .env with your Vercel registry URL and fallback LAN IP
 ```
 
-By default the app resolves the backend URL from a Vercel registry at launch and falls back to
-the LAN address in `lib/core/config/app_config.dart`. To pin it to a resolver running next to
-you, skip the registry:
+Then run the app:
+
+```bash
+flutter pub get
+flutter run --dart-define-from-file=.env
+```
+
+By default, the app resolves the backend URL from the Vercel registry set in your `.env` at launch, and falls back to the local LAN address. To pin it to a local resolver and skip the registry, set `AURORA_LOCAL=true` in your `.env`, or override it via CLI:
 
 ```bash
 # Android emulator → host machine at 10.0.2.2:8000
-flutter run --dart-define=AURORA_LOCAL=true
+flutter run --dart-define-from-file=.env --dart-define=AURORA_LOCAL=true
 
 # physical phone on the same Wi-Fi
-flutter run --dart-define=AURORA_LOCAL=true \
+flutter run --dart-define-from-file=.env \
+            --dart-define=AURORA_LOCAL=true \
             --dart-define=AURORA_API=http://192.168.0.5:8000
 ```
 
@@ -187,9 +193,9 @@ Grant the audio permission for the **On device** tab.
 
 ---
 
-## <img src="docs/icons/roadmap.svg" width="22" align="top"> Roadmap
+##  Roadmap
 
-- True crossfade (two overlapping players) — today's is a fade-out into a fade-in, because `just_audio_background` accepts only one player instance.
+- True crossfade (two overlapping players) - today's is a fade-out into a fade-in, because `just_audio_background` accepts only one player instance.
 - Video (MP4) download alongside the current MP3 + lyrics export.
 - Brightness drag HUD on the left edge.
 
