@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:palette_generator/palette_generator.dart';
+import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/dynamic_palette.dart';
 import '../../domain/entities/track.dart';
@@ -170,7 +171,26 @@ class PlayerController extends Notifier<PlayerState> {
       state = state.copyWith(isPlaying: ps.playing);
       if (ps.processingState == ja.ProcessingState.completed) _onComplete();
     });
+    // Handle skip buttons from the lock-screen / notification. When the user
+    // taps next/prev there, just_audio changes the index inside the
+    // ConcatenatingAudioSource. We translate that into our queue navigation.
+    _player.currentIndexStream.listen((newIdx) {
+      if (newIdx == null || _isHandlingNotifSkip) return;
+      // _concatBaseIndex is the position of the "current" track within the
+      // ConcatenatingAudioSource window (0 if first in queue, else 1).
+      if (newIdx > _concatBaseIndex) {
+        _isHandlingNotifSkip = true;
+        next().whenComplete(() => _isHandlingNotifSkip = false);
+      } else if (newIdx < _concatBaseIndex) {
+        _isHandlingNotifSkip = true;
+        previous().whenComplete(() => _isHandlingNotifSkip = false);
+      }
+    });
   }
+
+  /// Index of the "current" track within the ConcatenatingAudioSource window.
+  int _concatBaseIndex = 0;
+  bool _isHandlingNotifSkip = false;
 
   MediaItem _media(Track t) => MediaItem(
         id: t.id,
@@ -198,6 +218,12 @@ class PlayerController extends Notifier<PlayerState> {
       await _player.pause();
     } else {
       await _player.play();
+    }
+  }
+
+  Future<void> pause() async {
+    if (_player.playing) {
+      await _player.pause();
     }
   }
 
@@ -263,9 +289,45 @@ class PlayerController extends Notifier<PlayerState> {
           ? Uri.file(track.localPath!)
           : await ref.read(musicRepositoryProvider).resolveStream(track);
       if (token != _loadToken) return;
-      // Proxy/local serve clean audio — no special CDN headers needed.
+
+      // Build a 3-item ConcatenatingAudioSource (prev / current / next) so
+      // just_audio_background shows skip-prev and skip-next on the lock-screen
+      // and notification. The window is rebuilt on every track change.
+      final q = state.queue;
+      final idx = state.index;
+      final sources = <ja.AudioSource>[];
+      int initialIndex = 0;
+
+      if (q.length == 1) {
+        // Single track — no neighbours
+        sources.add(ja.AudioSource.uri(uri, tag: _media(track)));
+      } else {
+        // Previous track (placeholder — will be replaced when actually played)
+        if (idx > 0) {
+          final prev = q[idx - 1];
+          final prevUri = prev.localPath != null
+              ? Uri.file(prev.localPath!)
+              : Uri.parse('${AppConfig.apiBase}/stream?v=${prev.id}');
+          sources.add(ja.AudioSource.uri(prevUri, tag: _media(prev)));
+          initialIndex = 1;
+        }
+        // Current track
+        sources.add(ja.AudioSource.uri(uri, tag: _media(track)));
+        // Next track (placeholder)
+        if (idx < q.length - 1) {
+          final nxt = q[idx + 1];
+          final nxtUri = nxt.localPath != null
+              ? Uri.file(nxt.localPath!)
+              : Uri.parse('${AppConfig.apiBase}/stream?v=${nxt.id}');
+          sources.add(ja.AudioSource.uri(nxtUri, tag: _media(nxt)));
+        }
+      }
+
+      _concatBaseIndex = initialIndex;
       await _player.setAudioSource(
-          ja.AudioSource.uri(uri, tag: _media(track)));
+        ja.ConcatenatingAudioSource(children: sources),
+        initialIndex: initialIndex,
+      );
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) {

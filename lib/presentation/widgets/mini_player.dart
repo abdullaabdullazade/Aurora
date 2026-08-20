@@ -66,6 +66,16 @@ class MiniPlayer extends ConsumerWidget {
                     }
                   }
                 },
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v < -120) {
+                    HapticFeedback.lightImpact();
+                    ref.read(playerControllerProvider.notifier).next();
+                  } else if (v > 120) {
+                    HapticFeedback.lightImpact();
+                    ref.read(playerControllerProvider.notifier).previous();
+                  }
+                },
                 child: Glass(
                   radius: Radii.rLg,
                   blur: 22,
@@ -99,18 +109,6 @@ class MiniPlayer extends ConsumerWidget {
                                 ],
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous_rounded),
-                              iconSize: 26,
-                              visualDensity: VisualDensity.compact,
-                              color: AppColors.textSecondary,
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                ref
-                                    .read(playerControllerProvider.notifier)
-                                    .previous();
-                              },
-                            ),
                             SizedBox(
                               width: 34,
                               height: 34,
@@ -137,18 +135,6 @@ class MiniPlayer extends ConsumerWidget {
                                             .toggle();
                                       },
                                     ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_next_rounded),
-                              iconSize: 26,
-                              visualDensity: VisualDensity.compact,
-                              color: AppColors.textSecondary,
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                ref
-                                    .read(playerControllerProvider.notifier)
-                                    .next();
-                              },
                             ),
                           ],
                         ),

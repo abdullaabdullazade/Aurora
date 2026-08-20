@@ -60,7 +60,7 @@ class Track {
         'artworkUrl': artworkUrl,
         'seconds': duration.inSeconds,
         'plays': plays,
-        'accent': accent.toARGB32(),
+        'accent': accent.value,
         'localPath': localPath,
         'channelUrl': channelUrl,
       };

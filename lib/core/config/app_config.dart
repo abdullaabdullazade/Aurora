@@ -17,9 +17,10 @@ abstract final class AppConfig {
   static const String localApiBase =
       String.fromEnvironment('AURORA_API', defaultValue: 'http://10.0.2.2:8000');
       
-  /// Physical phone LAN fallback if the registry fails.
+  /// Public server fallback if the registry fails. Override at build time:
+  ///   flutter run --dart-define=AURORA_FALLBACK_LAN=http://YOUR_IP:8000
   static const String fallbackLanApi = 
-      String.fromEnvironment('AURORA_FALLBACK_LAN', defaultValue: 'http://192.168.0.193:8000');
+      String.fromEnvironment('AURORA_FALLBACK_LAN', defaultValue: 'http://10.0.2.2:8000');
 
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.

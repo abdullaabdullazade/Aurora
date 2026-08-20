@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.aurora_music"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         // Required by flutter_local_notifications (uses java.time backport).

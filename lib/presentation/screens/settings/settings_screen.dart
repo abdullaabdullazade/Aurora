@@ -134,7 +134,7 @@ class _Switch extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       value: value,
       onChanged: onChanged,
-      activeThumbColor: AppColors.accentBright,
+      activeColor: AppColors.accentBright,
       secondary: Container(
         width: 44,
         height: 44,
