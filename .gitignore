@@ -53,3 +53,6 @@ server/cookies.txt
 **/cookies.txt
 server/proxies.txt
 **/proxies.txt
+.env
+server/.env
+*.env
