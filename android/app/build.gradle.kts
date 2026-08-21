@@ -23,7 +23,8 @@ android {
         applicationId = "com.aurora.music"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion // Required for Firebase Auth 23.2.1
+        // Flutter 3.27 defaults to 21, while Firebase Auth requires 23.
+        minSdk = maxOf(23, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
