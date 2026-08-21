@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../state/auth_controller.dart';
 import '../../state/connectivity_controller.dart';
 import '../../state/favorites_controller.dart';
 import '../../state/providers.dart';
@@ -19,6 +21,7 @@ class HomeScreen extends ConsumerWidget {
     final charts = ref.watch(topChartsProvider);
     final recent = ref.watch(recentlyPlayedProvider);
     final online = ref.watch(isOnlineProvider);
+    final user = ref.watch(authStateProvider).valueOrNull;
     final text = Theme.of(context).textTheme;
 
     return AuroraRefresh(
@@ -83,8 +86,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             actions: [
               IconButton(
-                onPressed: () =>
-                    ref.read(navIndexProvider.notifier).state = 1,
+                onPressed: () => ref.read(navIndexProvider.notifier).state = 1,
                 icon: const Icon(Icons.search_rounded),
               ),
               IconButton(
@@ -96,22 +98,12 @@ class HomeScreen extends ConsumerWidget {
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const SettingsScreen())),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: AppColors.accentSweep,
-                    ),
-                    child: const Icon(Icons.person_rounded,
-                        color: Colors.black, size: 20),
-                  ),
+                  child: _ProfileAvatar(user: user),
                 ),
               ),
             ],
           ),
-          if (!online)
-            const SliverToBoxAdapter(child: _OfflineSanctuary()),
+          if (!online) const SliverToBoxAdapter(child: _OfflineSanctuary()),
           const SliverToBoxAdapter(child: SizedBox(height: Sp.sm)),
           // Each section retries only its own provider — a failed carousel
           // should not refetch (or wipe) the ones that loaded fine.
@@ -164,6 +156,56 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.user});
+
+  final User? user;
+
+  @override
+  Widget build(BuildContext context) {
+    final photoUrl = user?.photoURL;
+    final displayName = user?.displayName?.trim() ?? '';
+    final fallback = displayName.isNotEmpty
+        ? displayName.characters.first.toUpperCase()
+        : null;
+
+    return Container(
+      width: 34,
+      height: 34,
+      padding: const EdgeInsets.all(1.5),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: AppColors.accentSweep,
+      ),
+      child: ClipOval(
+        child: photoUrl != null && photoUrl.isNotEmpty
+            ? Image.network(
+                photoUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _fallback(fallback),
+              )
+            : _fallback(fallback),
+      ),
+    );
+  }
+
+  Widget _fallback(String? initial) => ColoredBox(
+        color: AppColors.elevated,
+        child: Center(
+          child: initial != null
+              ? Text(
+                  initial,
+                  style: const TextStyle(
+                    color: AppColors.accentBright,
+                    fontWeight: FontWeight.w800,
+                  ),
+                )
+              : const Icon(Icons.person_rounded,
+                  color: AppColors.accentBright, size: 20),
+        ),
+      );
+}
+
 String _greeting() {
   final h = DateTime.now().hour;
   if (h < 5) return 'Good night';
@@ -185,8 +227,18 @@ String _todayLabel() {
   final n = DateTime.now();
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const mons = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
   ];
   return '${days[n.weekday - 1]}, ${mons[n.month - 1]} ${n.day}';
 }
@@ -198,15 +250,27 @@ void _showNotifications(BuildContext context, WidgetRef ref) {
   final likedCount = ref.read(favoritesProvider).length;
   final items = <(IconData, String, String)>[
     if (recents.isNotEmpty)
-      (Icons.history_rounded, 'Continue listening',
-          'Pick up “${recents.first.title}”'),
+      (
+        Icons.history_rounded,
+        'Continue listening',
+        'Pick up “${recents.first.title}”'
+      ),
     if (likedCount > 0)
-      (Icons.favorite_rounded, 'Liked Songs',
-          'You have $likedCount liked ${likedCount == 1 ? 'song' : 'songs'}'),
-    (Icons.local_fire_department_rounded, 'Top Charts',
-        'See what’s trending today'),
-    (Icons.bedtime_rounded, 'Daily reminders on',
-        'Mix at 12:30 · wind-down at 20:00'),
+      (
+        Icons.favorite_rounded,
+        'Liked Songs',
+        'You have $likedCount liked ${likedCount == 1 ? 'song' : 'songs'}'
+      ),
+    (
+      Icons.local_fire_department_rounded,
+      'Top Charts',
+      'See what’s trending today'
+    ),
+    (
+      Icons.bedtime_rounded,
+      'Daily reminders on',
+      'Mix at 12:30 · wind-down at 20:00'
+    ),
   ];
   showModalBottomSheet(
     context: context,
@@ -238,8 +302,7 @@ void _showNotifications(BuildContext context, WidgetRef ref) {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                      borderRadius: Radii.rSm,
-                      gradient: AppColors.accentSweep),
+                      borderRadius: Radii.rSm, gradient: AppColors.accentSweep),
                   child: Icon(icon, color: Colors.black, size: 20),
                 ),
                 title: Text(title, style: text.titleMedium),
@@ -293,8 +356,8 @@ class _OfflineSanctuaryState extends State<_OfflineSanctuary>
               ),
               const SizedBox(width: Sp.sm),
               Text('Offline Sanctuary',
-                  style: text.labelLarge
-                      ?.copyWith(color: AppColors.textPrimary)),
+                  style:
+                      text.labelLarge?.copyWith(color: AppColors.textPrimary)),
               const SizedBox(width: Sp.xs),
               Text('· downloads only', style: text.labelSmall),
             ],
