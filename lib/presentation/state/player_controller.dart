@@ -175,22 +175,24 @@ class PlayerController extends Notifier<PlayerState> {
     // taps next/prev there, just_audio changes the index inside the
     // ConcatenatingAudioSource. We translate that into our queue navigation.
     _player.currentIndexStream.listen((newIdx) {
-      if (newIdx == null || _isHandlingNotifSkip) return;
-      // _concatBaseIndex is the position of the "current" track within the
-      // ConcatenatingAudioSource window (0 if first in queue, else 1).
+      if (newIdx == null || state.isLoading) return;
+      // Ignore index changes caused by our own setAudioSource
+      if (DateTime.now().difference(_lastSourceSetTime) < const Duration(milliseconds: 800)) {
+        return;
+      }
       if (newIdx > _concatBaseIndex) {
-        _isHandlingNotifSkip = true;
-        next().whenComplete(() => _isHandlingNotifSkip = false);
+        _lastSourceSetTime = DateTime.now();
+        next();
       } else if (newIdx < _concatBaseIndex) {
-        _isHandlingNotifSkip = true;
-        previous().whenComplete(() => _isHandlingNotifSkip = false);
+        _lastSourceSetTime = DateTime.now();
+        previous();
       }
     });
   }
 
   /// Index of the "current" track within the ConcatenatingAudioSource window.
   int _concatBaseIndex = 0;
-  bool _isHandlingNotifSkip = false;
+  DateTime _lastSourceSetTime = DateTime.now();
 
   MediaItem _media(Track t) => MediaItem(
         id: t.id,
@@ -276,6 +278,19 @@ class PlayerController extends Notifier<PlayerState> {
     next();
   }
 
+  Future<Uri> _getTrackUri(Track track) async {
+    if (track.localPath != null) {
+      // Local files: if it's a MediaStore track (numeric ID), use content URI
+      // to bypass Android's scoped storage native caching on fresh permissions.
+      final isNumeric = int.tryParse(track.id) != null;
+      if (isNumeric) {
+        return Uri.parse('content://media/external/audio/media/${track.id}');
+      }
+      return Uri.file(track.localPath!);
+    }
+    return await ref.read(musicRepositoryProvider).resolveStream(track);
+  }
+
   // Resolves the current track on-device (residential IP) and plays it.
   Future<void> _loadCurrent({bool autoplay = false}) async {
     final track = state.current;
@@ -285,9 +300,7 @@ class PlayerController extends Notifier<PlayerState> {
     state = state.copyWith(isLoading: true, position: Duration.zero);
     _recordRecent(track);
     try {
-      final uri = track.localPath != null
-          ? Uri.file(track.localPath!)
-          : await ref.read(musicRepositoryProvider).resolveStream(track);
+      final uri = await _getTrackUri(track);
       if (token != _loadToken) return;
 
       // Build a 3-item ConcatenatingAudioSource (prev / current / next) so
@@ -305,9 +318,7 @@ class PlayerController extends Notifier<PlayerState> {
         // Previous track (placeholder — will be replaced when actually played)
         if (idx > 0) {
           final prev = q[idx - 1];
-          final prevUri = prev.localPath != null
-              ? Uri.file(prev.localPath!)
-              : Uri.parse('${AppConfig.apiBase}/stream?v=${prev.id}');
+          final prevUri = await _getTrackUri(prev);
           sources.add(ja.AudioSource.uri(prevUri, tag: _media(prev)));
           initialIndex = 1;
         }
@@ -316,22 +327,17 @@ class PlayerController extends Notifier<PlayerState> {
         // Next track (placeholder)
         if (idx < q.length - 1) {
           final nxt = q[idx + 1];
-          final nxtUri = nxt.localPath != null
-              ? Uri.file(nxt.localPath!)
-              : Uri.parse('${AppConfig.apiBase}/stream?v=${nxt.id}');
+          final nxtUri = await _getTrackUri(nxt);
           sources.add(ja.AudioSource.uri(nxtUri, tag: _media(nxt)));
         }
       }
 
       _concatBaseIndex = initialIndex;
-      _isHandlingNotifSkip = true;
+      _lastSourceSetTime = DateTime.now();
       await _player.setAudioSource(
         ja.ConcatenatingAudioSource(children: sources),
         initialIndex: initialIndex,
       );
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _isHandlingNotifSkip = false;
-      });
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) {
