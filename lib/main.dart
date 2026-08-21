@@ -54,15 +54,24 @@ Future<void> main() async {
 }
 
 Future<void> _resolveBackend() async {
-  // Local dev pins the backend by hand — a registry hit would point the app at
-  // the remote tunnel and silently ignore the server running on this machine.
   if (AppConfig.useLocalServer) return;
   try {
     final res = await Dio()
         .get('${AppConfig.registryUrl}/api/server')
-        .timeout(const Duration(seconds: 5));
+        .timeout(const Duration(seconds: 3));
     final url = (res.data as Map)['url'];
-    if (url is String && url.startsWith('http')) AppConfig.apiBase = url;
+    if (url is String && url.startsWith('http')) {
+      try {
+        final health = await Dio()
+            .get('$url/health')
+            .timeout(const Duration(seconds: 2));
+        if (health.statusCode == 200) {
+          AppConfig.apiBase = url;
+        }
+      } catch (_) {
+        // Registry URL is dead/unreachable, keep fallback LAN/VPS URL
+      }
+    }
   } catch (_) {/* keep LAN fallback */}
 }
 
