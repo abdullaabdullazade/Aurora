@@ -4,7 +4,6 @@ services:
     build: .
     container_name: aurora-server
     restart: always
-    ports:
-      - "8000:8000"
+    network_mode: "host"
     volumes:
       - ./.env:/app/.env

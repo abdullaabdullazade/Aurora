@@ -22,6 +22,7 @@ import socket
 import threading
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import yt_dlp
@@ -116,8 +117,8 @@ def _proxies() -> list[str]:
     """Webshare residential proxies as 'http://user:pass@ip:port' URLs.
 
     YouTube bot-walls datacenter IPs; routing extraction through residential
-    proxies bypasses it entirely (no cookies/PO-token needed). File format is
-    one 'ip:port:user:pass' per line."""
+    proxies bypasses it entirely (no cookies/PO-token needed). Supported file
+    formats are URL, user:pass@ip:port, ip:port:user:pass, and ip:port."""
     global _proxy_cache
     if _proxy_cache:
         return _proxy_cache
@@ -125,12 +126,30 @@ def _proxies() -> list[str]:
     if not os.path.exists(path):
         return []
     out: list[str] = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
-            parts = line.strip().split(":")
-            if len(parts) == 4:
-                ip, port, user, pw = parts
-                out.append(f"http://{user}:{pw}@{ip}:{port}")
+            line = line.strip()
+            if not line or line.startswith(("#", "//")):
+                continue
+            if "://" in line:
+                candidate = line
+            elif "@" in line:
+                candidate = f"http://{line}"
+            else:
+                parts = line.split(":")
+                if len(parts) == 4:
+                    ip, port, user, pw = parts
+                    candidate = f"http://{user}:{pw}@{ip}:{port}"
+                elif len(parts) == 2:
+                    candidate = f"http://{line}"
+                else:
+                    continue
+            try:
+                parsed = urlsplit(candidate)
+                if parsed.scheme and parsed.hostname and parsed.port:
+                    out.append(candidate)
+            except ValueError:
+                continue
     _proxy_cache = out
     return out
 
@@ -142,6 +161,8 @@ def _proxies() -> list[str]:
 # burning attempts on flagged nodes.
 _good_proxies: list[str] = []
 _good_lock = threading.Lock()
+_bad_proxies: dict[str, float] = {}
+_BAD_PROXY_TTL = 30 * 60
 _PROBE_URL = "https://www.youtube.com/watch?v=9bZkp7q19f0"
 
 
@@ -163,13 +184,28 @@ def _drop_good(p: str | None) -> None:
             _good_proxies.remove(p)
 
 
-def _pick_proxy() -> str | None:
-    import random
+def _mark_bad(p: str | None) -> None:
+    if not p:
+        return
+    _drop_good(p)
     with _good_lock:
-        good = list(_good_proxies)
+        _bad_proxies[p] = time.time()
+
+
+def _pick_proxy(exclude: set[str] | None = None) -> str | None:
+    import random
+    exclude = exclude or set()
+    now = time.time()
+    with _good_lock:
+        expired = [p for p, ts in _bad_proxies.items()
+                   if now - ts >= _BAD_PROXY_TTL]
+        for p in expired:
+            _bad_proxies.pop(p, None)
+        bad = set(_bad_proxies)
+        good = [p for p in _good_proxies if p not in exclude and p not in bad]
     if good and random.random() < 0.9:
         return random.choice(good)
-    pool = _proxies()
+    pool = [p for p in _proxies() if p not in exclude and p not in bad]
     return random.choice(pool) if pool else None
 
 
@@ -186,7 +222,7 @@ def _proxy_clean(proxy: str) -> bool:
             ),
         },
         "extractor_args": {
-            "youtube": {"player_client": ["android", "web"]}
+            "youtube": {"player_client": ["default", "mweb", "web_embedded"]}
         },
         "socket_timeout": 12, "retries": 0, "extractor_retries": 0,
         "proxy": proxy,
@@ -196,6 +232,7 @@ def _proxy_clean(proxy: str) -> bool:
             info = ydl.extract_info(_PROBE_URL, download=False)
         return bool(info and (info.get("formats") or info.get("url")))
     except Exception:  # noqa: BLE001
+        _mark_bad(proxy)
         return False
 
 
@@ -338,7 +375,7 @@ def playlist(url: str, limit: int = 100) -> dict[str, Any]:
     opts["noplaylist"] = False
     opts["playlistend"] = limit
     try:
-        with _ydl(opts) as ydl:
+        with _ydl(opts, use_cookies=True) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"playlist failed: {e}") from e
@@ -512,6 +549,7 @@ def _ensure_local(video_id: str) -> str:
         # residential proxy pulls the bytes in ~2-4s, a dead one is abandoned in
         # ~8s and we hop to the next exit node — so first-byte stays under the
         # player's ~8s connect timeout in the common case.
+        used_proxies: set[str] = set()
         for attempt in range(6):
             opts = {
                 # Audio-only, m4a/mp4 only (itag 140 ≈ 4MB, then any m4a audio,
@@ -521,6 +559,7 @@ def _ensure_local(video_id: str) -> str:
                 "format": "140/bestaudio[ext=m4a]/18",
                 # nsig/signature solved via local nodejs (yt-dlp-ejs package).
                 "js_runtimes": {"node": {}},
+
                 "http_headers": {
                     "User-Agent": (
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -529,7 +568,7 @@ def _ensure_local(video_id: str) -> str:
                 },
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android", "web"]
+                        "player_client": ["default", "mweb", "web_embedded"]
                     }
                 },
                 "outtmpl": os.path.join(_CACHE_DIR, f"{video_id}.%(ext)s"),
@@ -540,26 +579,29 @@ def _ensure_local(video_id: str) -> str:
                 # Dead/slow proxy is abandoned fast so we hop to a fresh IP.
                 "socket_timeout": 12,
             }
-            proxy = _pick_proxy()
+            proxy = _pick_proxy(exclude=used_proxies)
             if proxy:
                 opts["proxy"] = proxy
+                used_proxies.add(proxy)
             try:
                 # Fresh logged-in cookies (auto-refreshed from the VPS Chrome)
                 # ride along on a clean residential IP — unlocks restricted
                 # formats and matches the account; the clean IP is what actually
                 # clears the bot wall.
-                with _ydl(opts) as ydl:
+                with _ydl(opts, use_cookies=True) as ydl:
                     ydl.download([url])
                 # The real extension (.m4a/.mp4) varies; normalize to .mp4 so
                 # the cache key + audio/mp4 content-type are stable.
                 got = _normalize_cache(video_id, path)
                 if got:
-                    _record_good(proxy)
+                    if proxy:
+                        _record_good(proxy)
                     _trim_cache()
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
-                _drop_good(proxy)
+                if proxy:
+                    _mark_bad(proxy)
             # brief backoff before the next attempt
             if attempt < 5:
                 time.sleep(0.5)

@@ -163,6 +163,21 @@ python -m pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env
 ```
 
+For YouTube requests from a datacenter/VPS, create the private proxy list from
+the safe example:
+
+```bash
+cd server
+cp proxies.example.txt proxies.txt
+# Replace the example with real proxies, one per line.
+```
+
+Accepted formats are `http://user:pass@ip:port`, `user:pass@ip:port`,
+`ip:port:user:pass`, and `ip:port`. The resolver chooses a proxy randomly,
+rotates to a different one after a failed attempt, and temporarily excludes
+failed proxies for 30 minutes. `server/proxies.txt` is gitignored; only the
+placeholder-only `server/proxies.example.txt` belongs in GitHub.
+
 ## <img src="docs/icons/run.svg" width="22" align="top"> Run the app
 
 Needs **Flutter 3.27+** (`Color.withValues`, AGP-9 toolchain).
