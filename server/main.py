@@ -177,9 +177,16 @@ def _proxy_clean(proxy: str) -> bool:
     """True if this exit node can extract (not bot-walled). Fast, no download."""
     opts = {
         "quiet": True, "no_warnings": True, "skip_download": True,
-        "noplaylist": True, "remote_components": ["ejs:github"],
+        "noplaylist": True,
+        "js_runtimes": {"node": {}},
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+        },
         "extractor_args": {
-            "youtube": {"player_client": ["android_vr"], "fetch_pot": ["never"]}
+            "youtube": {"player_client": ["android", "web"]}
         },
         "socket_timeout": 12, "retries": 0, "extractor_retries": 0,
         "proxy": proxy,
@@ -512,16 +519,17 @@ def _ensure_local(video_id: str) -> str:
                 # webm/opus) and no "/best" (multi-hundred-MB video) — keeps the
                 # container mp4-family so we can serve it as audio/mp4.
                 "format": "140/bestaudio[ext=m4a]/18",
-                # nsig/signature solved via deno + EJS (fetched once).
-                "remote_components": ["ejs:github"],
-                # android_vr serves itag 140 directly and needs NO PO token, so
-                # we skip the web/web_safari clients whose bgutil PO-token fetch
-                # times out (~20s each). fetch_pot=never removes any bgutil call.
-                # This is the whole ballgame: ~2-5s downloads instead of ~50s.
+                # nsig/signature solved via local nodejs (yt-dlp-ejs package).
+                "js_runtimes": {"node": {}},
+                "http_headers": {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                },
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android_vr"],
-                        "fetch_pot": ["never"],
+                        "player_client": ["android", "web"]
                     }
                 },
                 "outtmpl": os.path.join(_CACHE_DIR, f"{video_id}.%(ext)s"),
