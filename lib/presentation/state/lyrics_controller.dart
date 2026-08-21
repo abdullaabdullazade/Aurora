@@ -23,6 +23,9 @@ final _dio = Dio(BaseOptions(
   baseUrl: AppConfig.apiBase,
   connectTimeout: const Duration(seconds: 8),
   receiveTimeout: const Duration(seconds: 15),
+  headers: AppConfig.apiSecretKey.isNotEmpty
+      ? {'x-api-key': AppConfig.apiSecretKey}
+      : null,
 ));
 
 /// Lyrics for the current track. Uses offline-saved lyrics first (downloaded

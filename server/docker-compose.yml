@@ -9,3 +9,4 @@ services:
     volumes:
       - ./.env:/app/.env
       - ./cache:/app/cache
+      - ./data:/app/data

@@ -8,7 +8,10 @@ import 'providers.dart';
 /// Hive-backed "Liked Songs". State mirrors the favorites box.
 class FavoritesController extends Notifier<List<Track>> {
   @override
-  List<Track> build() => ref.watch(localStoreProvider).favorites();
+  List<Track> build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).favorites();
+  }
 
   bool contains(String id) => state.any((t) => t.id == id);
 
@@ -16,7 +19,7 @@ class FavoritesController extends Notifier<List<Track>> {
     final wasLiked = contains(track.id);
     await ref.read(localStoreProvider).toggleFavorite(track);
     state = ref.read(localStoreProvider).favorites();
-    ref.read(syncServiceProvider).pushFavorite(track, !wasLiked);
+    await ref.read(syncServiceProvider).pushFavorite(track, !wasLiked);
     if (!wasLiked) await _maybeDownload(track);
   }
 
@@ -25,10 +28,8 @@ class FavoritesController extends Notifier<List<Track>> {
   Future<void> _maybeDownload(Track track) async {
     if (!ref.read(autoDownloadFavoritesProvider)) return;
     if (track.localPath != null) return;
-    final already = ref
-        .read(localStoreProvider)
-        .downloads()
-        .any((t) => t.id == track.id);
+    final already =
+        ref.read(localStoreProvider).downloads().any((t) => t.id == track.id);
     if (already) return;
     try {
       await ref.read(downloadControllerProvider.notifier).download(track);

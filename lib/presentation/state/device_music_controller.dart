@@ -19,8 +19,7 @@ class MusicFolder {
     return parts.isEmpty ? path : parts.last;
   }
 
-  Duration get total =>
-      tracks.fold(Duration.zero, (s, t) => s + t.duration);
+  Duration get total => tracks.fold(Duration.zero, (s, t) => s + t.duration);
 }
 
 String _folderOf(String filePath) {
@@ -60,7 +59,7 @@ Future<bool> requestAudioPermission() async {
   ].request();
 
   return statuses[Permission.audio]?.isGranted == true ||
-         statuses[Permission.storage]?.isGranted == true;
+      statuses[Permission.storage]?.isGranted == true;
 }
 
 // Dedupe to a single in-flight scan.
@@ -105,9 +104,7 @@ final musicFoldersProvider = Provider<AsyncValue<List<MusicFolder>>>((ref) {
       if (t.localPath == null) continue;
       map.putIfAbsent(_folderOf(t.localPath!), () => []).add(t);
     }
-    final folders = map.entries
-        .map((e) => MusicFolder(e.key, e.value))
-        .toList()
+    final folders = map.entries.map((e) => MusicFolder(e.key, e.value)).toList()
       ..sort((a, b) => b.tracks.length.compareTo(a.tracks.length));
     // Keep hidden folders in the list (shown toggled-off); filtering for
     // playback happens in visibleDeviceTracksProvider.
@@ -128,7 +125,10 @@ final visibleDeviceTracksProvider = Provider<List<Track>>((ref) {
 /// Persisted set of hidden folder paths.
 class HiddenFoldersController extends Notifier<Set<String>> {
   @override
-  Set<String> build() => ref.watch(localStoreProvider).hiddenFolders();
+  Set<String> build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).hiddenFolders();
+  }
 
   Future<void> toggle(String path) async {
     final next = {...state};

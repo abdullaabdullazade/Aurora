@@ -14,7 +14,11 @@ typedef DownloadJob = ({Track track, double progress, bool paused});
 /// storage, with live progress / pause / resume / cancel via notification
 /// actions and the Queue tab.
 class DownloadController extends Notifier<Map<String, DownloadJob>> {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    headers: AppConfig.apiSecretKey.isNotEmpty
+        ? {'x-api-key': AppConfig.apiSecretKey}
+        : null,
+  ));
   final Map<String, CancelToken> _tokens = {};
 
   @override
@@ -39,6 +43,21 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
     if (track.localPath != null || state.containsKey(track.id)) return;
     state = {...state, track.id: (track: track, progress: 0.0, paused: false)};
     await _run(track);
+  }
+
+  /// Recreate app-private files after reinstall. The resolver's persistent
+  /// cache means this normally copies bytes already stored on the server and
+  /// does not download the track from YouTube again.
+  Future<void> restoreDownloads(List<Track> tracks) async {
+    final store = ref.read(localStoreProvider);
+    for (final track in tracks) {
+      final existing = store.downloads().where((item) => item.id == track.id);
+      if (existing.isNotEmpty) {
+        final path = existing.first.localPath;
+        if (path != null && File(path).existsSync()) continue;
+      }
+      if (!state.containsKey(track.id)) await download(track);
+    }
   }
 
   Future<void> resume(String id) async {
@@ -113,8 +132,8 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
         await file.writeAsBytes(const []);
       }
 
-      sink = file.openWrite(
-          mode: existing > 0 ? FileMode.append : FileMode.write);
+      sink =
+          file.openWrite(mode: existing > 0 ? FileMode.append : FileMode.write);
       var received = existing;
       var lastPct = -1;
       await for (final chunk in resp.data!.stream) {
@@ -126,7 +145,8 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
           final pct = (p * 100).round();
           if (pct >= lastPct + 5 || pct == 100) {
             lastPct = pct;
-            NotificationService.instance.showDownloadProgress(t.id, t.title, pct);
+            NotificationService.instance
+                .showDownloadProgress(t.id, t.title, pct);
           }
         }
       }
@@ -136,14 +156,15 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
       final store = ref.read(localStoreProvider);
       await store.saveDownload(t.copyWith(localPath: path));
       try {
-        final r = await _dio.get('${AppConfig.apiBase}/lyrics',
-            queryParameters: {
-              'title': t.title,
-              'artist': t.artist,
-              'duration': t.duration.inSeconds,
-            });
+        final r =
+            await _dio.get('${AppConfig.apiBase}/lyrics', queryParameters: {
+          'title': t.title,
+          'artist': t.artist,
+          'duration': t.duration.inSeconds,
+        });
         if (r.data is Map) {
-          await store.saveLyrics(t.id, Map<String, dynamic>.from(r.data as Map));
+          await store.saveLyrics(
+              t.id, Map<String, dynamic>.from(r.data as Map));
         }
       } catch (_) {}
 

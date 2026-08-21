@@ -17,7 +17,10 @@ String _str(ThemeMode m) => switch (m) {
 /// Persisted app theme mode (defaults to dark — the signature look).
 class ThemeModeController extends Notifier<ThemeMode> {
   @override
-  ThemeMode build() => _parse(ref.watch(localStoreProvider).themeMode());
+  ThemeMode build() {
+    ref.watch(syncRevisionProvider);
+    return _parse(ref.watch(localStoreProvider).themeMode());
+  }
 
   Future<void> set(ThemeMode mode) async {
     await ref.read(localStoreProvider).setThemeMode(_str(mode));

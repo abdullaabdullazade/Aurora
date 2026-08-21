@@ -8,7 +8,10 @@ import 'providers.dart';
 /// Hive-backed playlist CRUD. State is the in-memory mirror of the box.
 class PlaylistController extends Notifier<List<Playlist>> {
   @override
-  List<Playlist> build() => ref.watch(localStoreProvider).playlists();
+  List<Playlist> build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).playlists();
+  }
 
   // ids are derived from track count + name hash to stay deterministic
   // (Date.now/random are avoided per environment constraints).
@@ -19,6 +22,7 @@ class PlaylistController extends Notifier<List<Playlist>> {
     final p = Playlist(id: _newId(name), name: name.trim());
     await ref.read(localStoreProvider).savePlaylist(p);
     state = [...state, p];
+    await ref.read(syncServiceProvider).pushPlaylist(p);
     return p;
   }
 
@@ -34,6 +38,7 @@ class PlaylistController extends Notifier<List<Playlist>> {
     final p = Playlist(id: _newId(name), name: name.trim(), tracks: unique);
     await ref.read(localStoreProvider).savePlaylist(p);
     state = [...state, p];
+    await ref.read(syncServiceProvider).pushPlaylist(p);
     return p;
   }
 
@@ -50,13 +55,15 @@ class PlaylistController extends Notifier<List<Playlist>> {
 
   Future<void> removeTrack(String id, String trackId) async {
     await _update(
-        id, (p) => p.copyWith(tracks: p.tracks.where((t) => t.id != trackId).toList()));
+        id,
+        (p) => p.copyWith(
+            tracks: p.tracks.where((t) => t.id != trackId).toList()));
   }
 
   Future<void> delete(String id) async {
     await ref.read(localStoreProvider).deletePlaylist(id);
     state = state.where((p) => p.id != id).toList();
-    ref.read(syncServiceProvider).deletePlaylist(id);
+    await ref.read(syncServiceProvider).deletePlaylist(id);
   }
 
   Future<void> _update(String id, Playlist Function(Playlist) fn) async {
@@ -69,11 +76,10 @@ class PlaylistController extends Notifier<List<Playlist>> {
 
   Future<Playlist> _persist(LocalStore store, Playlist p) async {
     await store.savePlaylist(p);
-    ref.read(syncServiceProvider).pushPlaylist(p);
+    await ref.read(syncServiceProvider).pushPlaylist(p);
     return p;
   }
 }
 
-final playlistsProvider =
-    NotifierProvider<PlaylistController, List<Playlist>>(
-        PlaylistController.new);
+final playlistsProvider = NotifierProvider<PlaylistController, List<Playlist>>(
+    PlaylistController.new);

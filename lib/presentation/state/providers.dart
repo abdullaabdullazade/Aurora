@@ -9,6 +9,9 @@ final localStoreProvider = Provider<LocalStore>(
   (ref) => throw UnimplementedError('localStoreProvider must be overridden'),
 );
 
+/// Incremented after a server sync changes Hive so state notifiers rebuild.
+final syncRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// LIVE repository: FastAPI + yt-dlp resolver server (robust, no client 403s).
 final musicRepositoryProvider = Provider<MusicRepository>(
   (ref) => ApiMusicRepository(ref.watch(localStoreProvider)),
@@ -19,7 +22,10 @@ final trendingProvider = FutureProvider<List<Track>>(
 );
 
 final recentlyPlayedProvider = FutureProvider<List<Track>>(
-  (ref) => ref.watch(musicRepositoryProvider).recentlyPlayed(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(musicRepositoryProvider).recentlyPlayed();
+  },
 );
 
 final topChartsProvider = FutureProvider<List<Track>>(
@@ -35,7 +41,10 @@ final artistTracksProvider =
 });
 
 final downloadsProvider = FutureProvider<List<Track>>(
-  (ref) => ref.watch(musicRepositoryProvider).downloads(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(musicRepositoryProvider).downloads();
+  },
 );
 
 /// Selected bottom-nav tab (0 Home · 1 Search · 2 Library). Lets any screen
@@ -65,7 +74,10 @@ final searchSuggestionsProvider =
 
 /// Past queries, newest first. Invalidated whenever the history is written.
 final searchHistoryProvider = Provider<List<String>>(
-  (ref) => ref.watch(localStoreProvider).searchHistory(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).searchHistory();
+  },
 );
 
 // --- Listening stats -----------------------------------------------------
@@ -73,6 +85,7 @@ final searchHistoryProvider = Provider<List<String>>(
 typedef PlayStat = ({Track track, int count, int secondsPlayed});
 
 final listeningStatsProvider = Provider<List<PlayStat>>((ref) {
+  ref.watch(syncRevisionProvider);
   return ref.watch(localStoreProvider).stats().map((row) {
     return (
       track: Track.fromJson(row),
@@ -87,7 +100,10 @@ class AutoDownloadFavoritesController extends Notifier<bool> {
   static const _key = 'auto_download_favorites';
 
   @override
-  bool build() => ref.watch(localStoreProvider).flag(_key);
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key);
+  }
 
   Future<void> set(bool value) async {
     await ref.read(localStoreProvider).setFlag(_key, value);
@@ -104,7 +120,10 @@ class CrossfadeController extends Notifier<bool> {
   static const _key = 'crossfade';
 
   @override
-  bool build() => ref.watch(localStoreProvider).flag(_key);
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key);
+  }
 
   Future<void> set(bool value) async {
     await ref.read(localStoreProvider).setFlag(_key, value);
@@ -120,8 +139,10 @@ class CrossfadeSecondsController extends Notifier<int> {
   static const _key = 'crossfade_seconds';
 
   @override
-  int build() =>
-      (ref.watch(localStoreProvider).number(_key) ?? 6).clamp(2, 12);
+  int build() {
+    ref.watch(syncRevisionProvider);
+    return (ref.watch(localStoreProvider).number(_key) ?? 6).clamp(2, 12);
+  }
 
   Future<void> set(int value) async {
     final v = value.clamp(2, 12);

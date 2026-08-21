@@ -2,3 +2,5 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 yt-dlp
 httpx==0.28.1
+google-auth
+requests

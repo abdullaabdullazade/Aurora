@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import json
 import socket
 import sqlite3
 import threading
@@ -27,6 +28,8 @@ from urllib.parse import urlsplit
 
 import httpx
 import yt_dlp
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.id_token import verify_firebase_token
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -315,6 +318,197 @@ def _parse_lrc(lrc: str) -> list[dict[str, Any]]:
 
 @app.get("/health")
 def health() -> dict[str, bool]:
+    return {"ok": True}
+
+
+_DATA_DIR = os.path.abspath(os.environ.get(
+    "AURORA_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "data"),
+))
+_USER_DB = os.path.join(_DATA_DIR, "users.sqlite3")
+_user_db_lock = threading.Lock()
+_user_db_ready = False
+
+
+def _init_user_db() -> None:
+    global _user_db_ready
+    if _user_db_ready:
+        return
+    with _user_db_lock:
+        if _user_db_ready:
+            return
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        with sqlite3.connect(_USER_DB, timeout=30) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS user_records (
+                    uid TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (uid, kind, item_id)
+                )
+            """)
+        _user_db_ready = True
+
+
+def _firebase_uid(request: Request) -> str:
+    project_id = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
+    authorization = request.headers.get("authorization", "")
+    if not project_id:
+        raise HTTPException(503, "user sync is not configured")
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "missing Firebase ID token")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        claims = verify_firebase_token(
+            token,
+            GoogleAuthRequest(),
+            audience=project_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(401, "invalid Firebase ID token") from exc
+    uid = claims.get("sub") or claims.get("user_id")
+    if not isinstance(uid, str) or not uid:
+        raise HTTPException(401, "invalid Firebase user")
+    return uid
+
+
+def _valid_sync_item(kind: str, item: dict[str, Any]) -> tuple[str, str]:
+    if kind not in {"playlists", "favorites", "state"}:
+        raise HTTPException(400, "invalid sync record kind")
+    item_id = item.get("id")
+    if not isinstance(item_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,128}", item_id
+    ):
+        raise HTTPException(400, "invalid sync record ID")
+    encoded = json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+    max_size = 20 * 1024 * 1024 if kind == "state" else 2 * 1024 * 1024
+    if len(encoded.encode("utf-8")) > max_size:
+        raise HTTPException(413, "sync record is too large")
+    return item_id, encoded
+
+
+def _upsert_sync_items(
+    db: sqlite3.Connection,
+    uid: str,
+    kind: str,
+    items: list[dict[str, Any]],
+) -> int:
+    now = time.time()
+    count = 0
+    for item in items:
+        item_id, encoded = _valid_sync_item(kind, item)
+        db.execute("""
+            INSERT INTO user_records
+                (uid, kind, item_id, payload, deleted, updated_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            ON CONFLICT(uid, kind, item_id) DO UPDATE SET
+                payload = excluded.payload,
+                deleted = 0,
+                updated_at = excluded.updated_at
+        """, (uid, kind, item_id, encoded, now))
+        count += 1
+    return count
+
+
+@app.get("/sync")
+def sync_down(request: Request) -> dict[str, Any]:
+    uid = _firebase_uid(request)
+    _init_user_db()
+    result: dict[str, Any] = {
+        "playlists": [],
+        "favorites": [],
+        "deletedPlaylists": [],
+        "deletedFavorites": [],
+        "state": None,
+    }
+    with sqlite3.connect(_USER_DB, timeout=30) as db:
+        rows = db.execute(
+            "SELECT kind, item_id, payload, deleted FROM user_records "
+            "WHERE uid = ? ORDER BY updated_at ASC",
+            (uid,),
+        ).fetchall()
+    for kind, item_id, payload, deleted in rows:
+        if kind == "state":
+            if not deleted:
+                result["state"] = json.loads(payload).get("data")
+            continue
+        if deleted:
+            result["deletedPlaylists" if kind == "playlists"
+                   else "deletedFavorites"].append(item_id)
+        else:
+            result[kind].append(json.loads(payload))
+    return result
+
+
+@app.put("/sync")
+def sync_up(payload: dict[str, Any], request: Request) -> dict[str, int]:
+    uid = _firebase_uid(request)
+    playlists = payload.get("playlists", [])
+    favorites = payload.get("favorites", [])
+    state = payload.get("state")
+    if not isinstance(playlists, list) or not all(
+        isinstance(item, dict) for item in playlists
+    ):
+        raise HTTPException(400, "playlists must be a list")
+    if not isinstance(favorites, list) or not all(
+        isinstance(item, dict) for item in favorites
+    ):
+        raise HTTPException(400, "favorites must be a list")
+    if state is not None and not isinstance(state, dict):
+        raise HTTPException(400, "state must be an object")
+    _init_user_db()
+    with _user_db_lock, sqlite3.connect(_USER_DB, timeout=30) as db:
+        playlist_count = _upsert_sync_items(db, uid, "playlists", playlists)
+        favorite_count = _upsert_sync_items(db, uid, "favorites", favorites)
+        if state is not None:
+            _upsert_sync_items(
+                db, uid, "state", [{"id": "snapshot", "data": state}]
+            )
+    return {
+        "playlists": playlist_count,
+        "favorites": favorite_count,
+        "state": 1 if state is not None else 0,
+    }
+
+
+@app.put("/sync/{kind}/{item_id}")
+def sync_one(
+    kind: str,
+    item_id: str,
+    payload: dict[str, Any],
+    request: Request,
+) -> dict[str, bool]:
+    uid = _firebase_uid(request)
+    payload = {**payload, "id": item_id}
+    _init_user_db()
+    with _user_db_lock, sqlite3.connect(_USER_DB, timeout=30) as db:
+        _upsert_sync_items(db, uid, kind, [payload])
+    return {"ok": True}
+
+
+@app.delete("/sync/{kind}/{item_id}")
+def delete_sync_item(
+    kind: str,
+    item_id: str,
+    request: Request,
+) -> dict[str, bool]:
+    uid = _firebase_uid(request)
+    _valid_sync_item(kind, {"id": item_id})
+    _init_user_db()
+    with _user_db_lock, sqlite3.connect(_USER_DB, timeout=30) as db:
+        db.execute("""
+            INSERT INTO user_records
+                (uid, kind, item_id, payload, deleted, updated_at)
+            VALUES (?, ?, ?, '{}', 1, ?)
+            ON CONFLICT(uid, kind, item_id) DO UPDATE SET
+                payload = '{}',
+                deleted = 1,
+                updated_at = excluded.updated_at
+        """, (uid, kind, item_id, time.time()))
     return {"ok": True}
 
 
