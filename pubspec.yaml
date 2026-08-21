@@ -69,6 +69,8 @@ dependencies:
 # the app builds with zero native toolchain.
 dependency_overrides:
   path_provider_android: 2.2.15
+  just_audio_background:
+    path: packages/just_audio_background
 
 dev_dependencies:
   flutter_test:
