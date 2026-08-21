@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/track.dart';
+import '../../core/db/sync_service.dart';
 import 'download_controller.dart';
 import 'providers.dart';
 
@@ -15,6 +16,7 @@ class FavoritesController extends Notifier<List<Track>> {
     final wasLiked = contains(track.id);
     await ref.read(localStoreProvider).toggleFavorite(track);
     state = ref.read(localStoreProvider).favorites();
+    ref.read(syncServiceProvider).pushFavorite(track, !wasLiked);
     if (!wasLiked) await _maybeDownload(track);
   }
 

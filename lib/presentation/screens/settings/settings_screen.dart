@@ -5,6 +5,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../state/favorites_controller.dart';
 import '../../state/providers.dart';
 import '../../state/settings_controller.dart';
+import '../../state/auth_controller.dart';
 import 'equalizer_screen.dart';
 import 'stats_screen.dart';
 
@@ -23,6 +24,8 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(Sp.lg),
         children: [
+          const _AccountSection(),
+          const SizedBox(height: Sp.xl),
           Text('Appearance', style: text.labelLarge),
           const SizedBox(height: Sp.sm),
           SegmentedButton<ThemeMode>(
@@ -174,6 +177,75 @@ class _Tile extends StatelessWidget {
       subtitle: Text(subtitle, style: text.bodyMedium),
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,
+    );
+  }
+}
+
+class _AccountSection extends ConsumerWidget {
+  const _AccountSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
+    final authState = ref.watch(authStateProvider);
+    final authController = ref.watch(authControllerProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Account', style: text.labelLarge),
+        const SizedBox(height: Sp.sm),
+        authState.when(
+          data: (user) {
+            if (user == null) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                      borderRadius: Radii.rSm, color: AppColors.elevated),
+                  child: const Icon(Icons.login_rounded, color: Colors.white),
+                ),
+                title: Text('Sign in with Google', style: text.titleMedium),
+                subtitle: Text('Sync your music and playlists',
+                    style: text.bodyMedium),
+                onTap: () async {
+                  await authController.signInWithGoogle();
+                },
+              );
+            }
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: Radii.rSm,
+                  image: user.photoURL != null
+                      ? DecorationImage(
+                          image: NetworkImage(user.photoURL!),
+                          fit: BoxFit.cover)
+                      : null,
+                  color: AppColors.elevated,
+                ),
+                child: user.photoURL == null
+                    ? const Icon(Icons.person_rounded, color: Colors.white)
+                    : null,
+              ),
+              title: Text(user.displayName ?? 'Signed in',
+                  style: text.titleMedium),
+              subtitle: Text(user.email ?? '', style: text.bodyMedium),
+              trailing: IconButton(
+                icon: const Icon(Icons.logout_rounded),
+                onPressed: () => authController.signOut(),
+              ),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('Error: $e'),
+        ),
+      ],
     );
   }
 }

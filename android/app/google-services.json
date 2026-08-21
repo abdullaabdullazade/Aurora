@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "669587044386",
+    "project_id": "aurora-1058f",
+    "storage_bucket": "aurora-1058f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:669587044386:android:057d2d4ab4edf9fbab327b",
+        "android_client_info": {
+          "package_name": "com.aurora.music"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGPfa9qk-SmvXnj_Efd7khd5lsb1lfc88"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/db/local_store.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/track.dart';
+import '../../core/db/sync_service.dart';
 import 'providers.dart';
 
 /// Hive-backed playlist CRUD. State is the in-memory mirror of the box.
@@ -55,6 +56,7 @@ class PlaylistController extends Notifier<List<Playlist>> {
   Future<void> delete(String id) async {
     await ref.read(localStoreProvider).deletePlaylist(id);
     state = state.where((p) => p.id != id).toList();
+    ref.read(syncServiceProvider).deletePlaylist(id);
   }
 
   Future<void> _update(String id, Playlist Function(Playlist) fn) async {
@@ -67,6 +69,7 @@ class PlaylistController extends Notifier<List<Playlist>> {
 
   Future<Playlist> _persist(LocalStore store, Playlist p) async {
     await store.savePlaylist(p);
+    ref.read(syncServiceProvider).pushPlaylist(p);
     return p;
   }
 }

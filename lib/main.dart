@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'core/config/app_config.dart';
 import 'core/db/local_store.dart';
+import 'core/db/sync_service.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/root_scaffold.dart';
@@ -13,6 +15,11 @@ import 'presentation/state/settings_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase init failed: $e');
+  }
   SystemChrome.setSystemUIOverlayStyle(AppTheme.overlay);
   await SystemChrome.setPreferredOrientations(
       [DeviceOrientation.portraitUp]);
@@ -64,6 +71,9 @@ class AuroraApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Initialize SyncService
+    ref.read(syncServiceProvider);
+    
     final mode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'Aurora Music',

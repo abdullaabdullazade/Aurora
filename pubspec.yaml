@@ -28,6 +28,10 @@ dependencies:
 
   # Local DB (offline-first)
   hive: ^2.2.3
+  firebase_core: ^3.1.1
+  firebase_auth: ^5.1.1
+  google_sign_in: ^6.2.1
+  cloud_firestore: ^5.0.1
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4
 
@@ -58,6 +62,7 @@ dependencies:
   scrollable_positioned_list: ^0.3.8 # exact line-index jump for synced lyrics
   google_fonts: ^6.2.1
   palette_generator: ^0.3.3+5 # dominant-color extraction for ambient bg
+
 
 # path_provider_android >=2.3 pulls `jni`, which forces a native CMake/NDK
 # build (needs extra SDK components). Pin to the last pure-Kotlin release so
