@@ -54,8 +54,8 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.equalizer_rounded,
             title: 'Equalizer',
             subtitle: 'Tune the sound across 5 bands',
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const EqualizerScreen())),
+            onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EqualizerScreen())),
           ),
           _Switch(
             icon: Icons.multitrack_audio_rounded,
@@ -75,9 +75,8 @@ class SettingsScreen extends ConsumerWidget {
                 max: 12,
                 divisions: 10,
                 label: '${seconds}s',
-                onChanged: (v) => ref
-                    .read(crossfadeSecondsProvider.notifier)
-                    .set(v.round()),
+                onChanged: (v) =>
+                    ref.read(crossfadeSecondsProvider.notifier).set(v.round()),
               ),
             ),
           const SizedBox(height: Sp.xl),
@@ -93,9 +92,7 @@ class SettingsScreen extends ConsumerWidget {
               // Turning it on should also catch up on everything already
               // liked, not just apply from here forward.
               if (v) {
-                await ref
-                    .read(favoritesProvider.notifier)
-                    .downloadAllLiked();
+                await ref.read(favoritesProvider.notifier).downloadAllLiked();
               }
             },
           ),
@@ -103,8 +100,8 @@ class SettingsScreen extends ConsumerWidget {
             icon: Icons.insights_rounded,
             title: 'Listening stats',
             subtitle: 'Top artists, most played, time listened',
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const StatsScreen())),
+            onTap: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const StatsScreen())),
           ),
           const SizedBox(height: Sp.xl),
           Center(
@@ -211,7 +208,14 @@ class _AccountSection extends ConsumerWidget {
                 subtitle: Text('Sync your music and playlists',
                     style: text.bodyMedium),
                 onTap: () async {
-                  await authController.signInWithGoogle();
+                  try {
+                    await authController.signInWithGoogle();
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Google sign-in failed: $error')),
+                    );
+                  }
                 },
               );
             }
