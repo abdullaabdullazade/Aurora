@@ -149,7 +149,7 @@ a shared cache, and a Range-seekable audio proxy.
 ```
 GET /health
 GET /search?q=…&limit=20     → [{id, title, artist, duration, thumbnail, views}]
-GET /stream?v=VIDEO_ID       → audio bytes · HTTP Range · 30-min cache
+GET /stream?v=VIDEO_ID       → audio bytes · HTTP Range · persistent cache
 GET /lyrics?title=&artist=   → synced LRC when lrclib has it, else plain text
 GET /playlist?url=…          → {title, uploader, tracks[]} from a playlist / album / mix link
 GET /suggest?q=…             → search autocomplete (returns [] on failure, never throws)
@@ -158,10 +158,15 @@ GET /suggest?q=…             → search autocomplete (returns [] on failure, n
 ```bash
 cd server
 cp .env.example .env
-# Edit .env to add your REGISTRY_URL and REGISTER_SECRET (optional)
+# Edit .env to add optional registry settings and choose a cache limit.
+# AURORA_CACHE_MAX_BYTES=unlimited keeps cached songs permanently.
 python -m pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env
 ```
+
+Downloaded tracks are stored under `server/cache` and indexed by YouTube video ID in
+SQLite, so later requests and server restarts reuse the same file. The cache is unlimited by
+default; set `AURORA_CACHE_MAX_BYTES=10GB` (or another size) to enable LRU eviction.
 
 For YouTube requests from a datacenter/VPS, create the private proxy list from
 the safe example:

@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import socket
+import sqlite3
 import threading
 import time
 from typing import Any
@@ -84,11 +85,6 @@ def _start_register() -> None:
     threading.Thread(target=_register_loop, daemon=True).start()
     # Seed the clean-proxy pool so the first plays are fast, then keep it topped.
     threading.Thread(target=_warm_loop, daemon=True).start()
-
-# tiny in-memory cache: video_id -> (expiry_ts, direct_url, headers)
-_stream_cache: dict[str, tuple[float, str, dict[str, str]]] = {}
-_CACHE_TTL = 60 * 30  # 30 min (well under googlevideo expiry)
-
 
 def _cookiefile() -> str | None:
     """YouTube cookies for datacenter extraction (bypasses the bot/login wall).
@@ -457,7 +453,13 @@ def lyrics(title: str, artist: str = "", duration: int = 0) -> dict[str, Any]:
     }
 
 
-_CACHE_DIR = "/tmp/aurora_cache"
+_CACHE_DIR = os.path.abspath(os.environ.get(
+    "AURORA_CACHE_DIR",
+    os.path.join(os.path.dirname(__file__), "cache"),
+))
+_CACHE_DB = os.path.join(_CACHE_DIR, "cache.sqlite3")
+_cache_db_lock = threading.Lock()
+_cache_db_ready = False
 _dl_locks: dict[str, threading.Lock] = {}
 _dl_locks_guard = threading.Lock()
 
@@ -470,31 +472,134 @@ def _lock_for(video_id: str) -> threading.Lock:
         return lk
 
 
-_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+def _init_cache_db() -> None:
+    """Create the persistent YouTube-ID index and adopt existing cache files."""
+    global _cache_db_ready
+    if _cache_db_ready:
+        return
+    with _cache_db_lock:
+        if _cache_db_ready:
+            return
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        with sqlite3.connect(_CACHE_DB, timeout=30) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS tracks (
+                    video_id TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    last_accessed REAL NOT NULL
+                )
+            """)
+            # Files copied from the old /tmp cache are indexed automatically.
+            import glob
+            now = time.time()
+            for path in glob.glob(os.path.join(_CACHE_DIR, "*.mp4")):
+                video_id = os.path.splitext(os.path.basename(path))[0]
+                if re.fullmatch(r"[A-Za-z0-9_-]{6,64}", video_id):
+                    db.execute("""
+                        INSERT OR IGNORE INTO tracks
+                            (video_id, filename, size_bytes, created_at, last_accessed)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (video_id, os.path.basename(path),
+                          os.path.getsize(path), now, now))
+        _cache_db_ready = True
 
 
-def _trim_cache() -> None:
-    """Keep the cache under a size cap by evicting the oldest files, so an
-    unattended box never fills its disk (each track is ~22 MB)."""
-    try:
-        files = [
-            (os.path.getmtime(p), os.path.getsize(p), p)
-            for p in __import__("glob").glob(os.path.join(_CACHE_DIR, "*"))
-            if os.path.isfile(p)
-        ]
-    except Exception:  # noqa: BLE001
+def _cache_put(video_id: str, path: str) -> None:
+    _init_cache_db()
+    now = time.time()
+    with sqlite3.connect(_CACHE_DB, timeout=30) as db:
+        db.execute("""
+            INSERT INTO tracks
+                (video_id, filename, size_bytes, created_at, last_accessed)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(video_id) DO UPDATE SET
+                filename = excluded.filename,
+                size_bytes = excluded.size_bytes,
+                last_accessed = excluded.last_accessed
+        """, (video_id, os.path.basename(path), os.path.getsize(path), now, now))
+
+
+def _cache_get(video_id: str) -> str | None:
+    _init_cache_db()
+    with sqlite3.connect(_CACHE_DB, timeout=30) as db:
+        row = db.execute(
+            "SELECT filename FROM tracks WHERE video_id = ?", (video_id,)
+        ).fetchone()
+        if row:
+            path = os.path.join(_CACHE_DIR, row[0])
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                db.execute(
+                    "UPDATE tracks SET last_accessed = ? WHERE video_id = ?",
+                    (time.time(), video_id),
+                )
+                return path
+            db.execute("DELETE FROM tracks WHERE video_id = ?", (video_id,))
+    return None
+
+
+def _cache_count() -> int:
+    _init_cache_db()
+    with sqlite3.connect(_CACHE_DB, timeout=30) as db:
+        return int(db.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
+
+
+def _cache_max_bytes() -> int | None:
+    """Return the configured byte limit, or None for an unlimited cache.
+
+    AURORA_CACHE_MAX_BYTES accepts a byte count, values such as 10GB/500MB,
+    or unlimited/none/0. The safe default is unlimited: cached songs are never
+    deleted unless the operator explicitly configures a finite limit.
+    """
+    raw = os.environ.get("AURORA_CACHE_MAX_BYTES", "unlimited").strip().lower()
+    if raw in {"", "0", "none", "unlimited", "infinite", "inf"}:
+        return None
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)?", raw)
+    if not match:
+        raise RuntimeError(
+            "AURORA_CACHE_MAX_BYTES must be unlimited or a size such as 10GB"
+        )
+    value = float(match.group(1))
+    multiplier = {
+        None: 1,
+        "b": 1,
+        "kb": 1024,
+        "mb": 1024 ** 2,
+        "gb": 1024 ** 3,
+        "tb": 1024 ** 4,
+    }[match.group(2)]
+    return int(value * multiplier)
+
+
+def _enforce_cache_limit(protected_video_id: str) -> None:
+    """Evict least-recently-used tracks only when a finite limit is set."""
+    limit = _cache_max_bytes()
+    if limit is None:
         return
-    total = sum(s for _, s, _ in files)
-    if total <= _CACHE_MAX_BYTES:
-        return
-    for _, size, p in sorted(files):  # oldest first
-        try:
-            os.remove(p)
-            total -= size
-        except Exception:  # noqa: BLE001
-            pass
-        if total <= _CACHE_MAX_BYTES:
-            break
+    _init_cache_db()
+    with _cache_db_lock, sqlite3.connect(_CACHE_DB, timeout=30) as db:
+        rows = db.execute(
+            "SELECT video_id, filename, size_bytes FROM tracks "
+            "ORDER BY last_accessed ASC"
+        ).fetchall()
+        total = sum(int(row[2]) for row in rows)
+        for video_id, filename, size_bytes in rows:
+            if total <= limit:
+                break
+            # Never delete the track that has just been downloaded. A single
+            # large track may therefore temporarily exceed a very small limit.
+            if video_id == protected_video_id:
+                continue
+            path = os.path.join(_CACHE_DIR, filename)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                db.execute("DELETE FROM tracks WHERE video_id = ?", (video_id,))
+                total -= int(size_bytes)
+            except OSError:
+                continue
 
 
 def _normalize_cache(video_id: str, path: str) -> str | None:
@@ -525,18 +630,19 @@ def _ensure_local(video_id: str) -> str:
     SABR + the bgutil PO-token + nsig (deno/EJS), so we let it pull the bytes
     once and serve the cached file (Range-seekable) to the app.
     """
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,64}", video_id):
+        raise HTTPException(400, "invalid YouTube video ID")
+    cached = _cache_get(video_id)
+    if cached:
+        return cached
     path = os.path.join(_CACHE_DIR, f"{video_id}.mp4")
-    if os.path.exists(path) and os.path.getsize(path) > 0:
-        age = time.time() - os.path.getmtime(path)
-        if age < _CACHE_TTL:
-            return path
 
     lock = _lock_for(video_id)
     with lock:
         # Another request may have finished it while we waited.
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            if time.time() - os.path.getmtime(path) < _CACHE_TTL:
-                return path
+        cached = _cache_get(video_id)
+        if cached:
+            return cached
         os.makedirs(_CACHE_DIR, exist_ok=True)
         url = f"https://www.youtube.com/watch?v={video_id}"
         # Retry with a fresh residential IP each attempt (a flagged exit node
@@ -596,7 +702,8 @@ def _ensure_local(video_id: str) -> str:
                 if got:
                     if proxy:
                         _record_good(proxy)
-                    _trim_cache()
+                    _cache_put(video_id, got)
+                    _enforce_cache_limit(video_id)
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
@@ -608,6 +715,8 @@ def _ensure_local(video_id: str) -> str:
 
     if not (os.path.exists(path) and os.path.getsize(path) > 0):
         raise HTTPException(404, f"no audio stream: {last_err}")
+    _cache_put(video_id, path)
+    _enforce_cache_limit(video_id)
     return path
 
 
