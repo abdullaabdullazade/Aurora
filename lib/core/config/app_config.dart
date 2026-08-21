@@ -22,6 +22,10 @@ abstract final class AppConfig {
   static const String fallbackLanApi = 
       String.fromEnvironment('AURORA_FALLBACK_LAN', defaultValue: 'http://10.0.2.2:8000');
 
+  /// Secret key for authenticating with the resolver server.
+  static const String apiSecretKey =
+      String.fromEnvironment('AURORA_SECRET_KEY', defaultValue: '');
+
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.
   ///

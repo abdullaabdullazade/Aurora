@@ -193,6 +193,33 @@ flutter run --dart-define-from-file=.env \
             --dart-define=AURORA_API=http://192.168.0.5:8000
 ```
 
+### Server Security (Secret Key)
+To prevent unauthorized access to your FastAPI resolver server:
+1. Set `AURORA_SECRET_KEY` in `server/.env`:
+   ```bash
+   AURORA_SECRET_KEY="your_custom_secret_key"
+   ```
+2. Pass the key when building or running the Flutter app:
+   ```bash
+   flutter run --dart-define=AURORA_SECRET_KEY="your_custom_secret_key"
+   ```
+   Or when building APK:
+   ```bash
+   flutter build apk --release \
+     --dart-define=AURORA_FALLBACK_LAN=http://YOUR_SERVER_IP:8000 \
+     --dart-define=AURORA_SECRET_KEY="your_custom_secret_key"
+   ```
+
+### Firebase & Google Sign-In Setup
+To enable Google Sign-In and Cloud Sync:
+1. Place your `google-services.json` in `android/app/`.
+2. Go to **Firebase Console** -> **Project Settings** -> **Your Android App**.
+3. Obtain your signing certificate SHA-1 fingerprint:
+   ```bash
+   cd android && ./gradlew signingReport
+   ```
+4. Copy the `SHA-1` (and `SHA-256`) fingerprint for your debug/release keystore and add it under **SHA certificate fingerprints** in Firebase Console. *(Without SHA-1 registered in Firebase, Google Sign-In will return an error on mobile devices).*
+
 Grant the audio permission for the **On device** tab.
 
 ---

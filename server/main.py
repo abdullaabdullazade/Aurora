@@ -31,6 +31,21 @@ from fastapi.responses import StreamingResponse
 app = FastAPI(title="Aurora Resolver")
 
 
+@app.middleware("http")
+async def verify_secret_key(request: Request, call_next):
+    expected_secret = os.environ.get("AURORA_SECRET_KEY")
+    if expected_secret:
+        if request.url.path != "/health":
+            client_secret = request.headers.get("x-api-key") or request.query_params.get("key")
+            if client_secret != expected_secret:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized: Invalid or missing API key"}
+                )
+    return await call_next(request)
+
+
 def _lan_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:

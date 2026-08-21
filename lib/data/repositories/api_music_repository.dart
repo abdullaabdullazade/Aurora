@@ -17,6 +17,9 @@ class ApiMusicRepository implements MusicRepository {
               baseUrl: AppConfig.apiBase,
               connectTimeout: const Duration(seconds: 10),
               receiveTimeout: const Duration(seconds: 30),
+              headers: AppConfig.apiSecretKey.isNotEmpty
+                  ? {'x-api-key': AppConfig.apiSecretKey}
+                  : null,
             ));
 
   Track _fromJson(Map<String, dynamic> j) {
@@ -62,8 +65,11 @@ class ApiMusicRepository implements MusicRepository {
   /// Streamed through the resolver proxy (clean headers → no CDN 403).
   /// Direct on-device play 403s in ExoPlayer; the proxy is the reliable path.
   @override
-  Future<Uri> resolveStream(Track track, {bool audioOnly = true}) async =>
-      Uri.parse('${AppConfig.apiBase}/stream?v=${track.id}');
+  Future<Uri> resolveStream(Track track, {bool audioOnly = true}) async {
+    final secret = AppConfig.apiSecretKey;
+    final keyParam = secret.isNotEmpty ? '&key=$secret' : '';
+    return Uri.parse('${AppConfig.apiBase}/stream?v=${track.id}$keyParam');
+  }
 
   @override
   Future<({String title, List<Track> tracks})> importPlaylist(

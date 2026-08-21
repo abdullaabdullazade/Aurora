@@ -324,10 +324,14 @@ class PlayerController extends Notifier<PlayerState> {
       }
 
       _concatBaseIndex = initialIndex;
+      _isHandlingNotifSkip = true;
       await _player.setAudioSource(
         ja.ConcatenatingAudioSource(children: sources),
         initialIndex: initialIndex,
       );
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isHandlingNotifSkip = false;
+      });
       if (token != _loadToken) return;
       state = state.copyWith(isLoading: false);
       if (autoplay) {
