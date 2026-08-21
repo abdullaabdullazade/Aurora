@@ -3,6 +3,7 @@ import '../../core/config/app_config.dart';
 import '../../core/db/local_store.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/music_repository.dart';
+import '../datasources/yt_stream_resolver.dart';
 
 /// Talks to the FastAPI + yt-dlp resolver. All YouTube extraction happens
 /// server-side, so the app never gets rate-limited / 403'd by googlevideo.

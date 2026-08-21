@@ -10,6 +10,7 @@ import 'package:palette_generator/palette_generator.dart';
 import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/dynamic_palette.dart';
+import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
@@ -313,22 +314,26 @@ class PlayerController extends Notifier<PlayerState> {
 
       if (q.length == 1) {
         // Single track — no neighbours
-        sources.add(ja.AudioSource.uri(uri, tag: _media(track)));
+        sources.add(ja.AudioSource.uri(uri,
+            tag: _media(track), headers: ytStreamHeaders));
       } else {
         // Previous track (placeholder — will be replaced when actually played)
         if (idx > 0) {
           final prev = q[idx - 1];
           final prevUri = await _getTrackUri(prev);
-          sources.add(ja.AudioSource.uri(prevUri, tag: _media(prev)));
+          sources.add(ja.AudioSource.uri(prevUri,
+              tag: _media(prev), headers: ytStreamHeaders));
           initialIndex = 1;
         }
         // Current track
-        sources.add(ja.AudioSource.uri(uri, tag: _media(track)));
+        sources.add(ja.AudioSource.uri(uri,
+            tag: _media(track), headers: ytStreamHeaders));
         // Next track (placeholder)
         if (idx < q.length - 1) {
           final nxt = q[idx + 1];
           final nxtUri = await _getTrackUri(nxt);
-          sources.add(ja.AudioSource.uri(nxtUri, tag: _media(nxt)));
+          sources.add(ja.AudioSource.uri(nxtUri,
+              tag: _media(nxt), headers: ytStreamHeaders));
         }
       }
 
