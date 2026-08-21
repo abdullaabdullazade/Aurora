@@ -312,28 +312,31 @@ class PlayerController extends Notifier<PlayerState> {
       final sources = <ja.AudioSource>[];
       int initialIndex = 0;
 
+      Map<String, String>? _headersFor(Uri u) =>
+          u.scheme == 'http' || u.scheme == 'https' ? ytStreamHeaders : null;
+
       if (q.length == 1) {
         // Single track — no neighbours
         sources.add(ja.AudioSource.uri(uri,
-            tag: _media(track), headers: ytStreamHeaders));
+            tag: _media(track), headers: _headersFor(uri)));
       } else {
         // Previous track (placeholder — will be replaced when actually played)
         if (idx > 0) {
           final prev = q[idx - 1];
           final prevUri = await _getTrackUri(prev);
           sources.add(ja.AudioSource.uri(prevUri,
-              tag: _media(prev), headers: ytStreamHeaders));
+              tag: _media(prev), headers: _headersFor(prevUri)));
           initialIndex = 1;
         }
         // Current track
         sources.add(ja.AudioSource.uri(uri,
-            tag: _media(track), headers: ytStreamHeaders));
+            tag: _media(track), headers: _headersFor(uri)));
         // Next track (placeholder)
         if (idx < q.length - 1) {
           final nxt = q[idx + 1];
           final nxtUri = await _getTrackUri(nxt);
           sources.add(ja.AudioSource.uri(nxtUri,
-              tag: _media(nxt), headers: ytStreamHeaders));
+              tag: _media(nxt), headers: _headersFor(nxtUri)));
         }
       }
 

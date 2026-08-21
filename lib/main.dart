@@ -55,24 +55,8 @@ Future<void> main() async {
 
 Future<void> _resolveBackend() async {
   if (AppConfig.useLocalServer) return;
-  try {
-    final res = await Dio()
-        .get('${AppConfig.registryUrl}/api/server')
-        .timeout(const Duration(seconds: 3));
-    final url = (res.data as Map)['url'];
-    if (url is String && url.startsWith('http')) {
-      try {
-        final health = await Dio()
-            .get('$url/health')
-            .timeout(const Duration(seconds: 2));
-        if (health.statusCode == 200) {
-          AppConfig.apiBase = url;
-        }
-      } catch (_) {
-        // Registry URL is dead/unreachable, keep fallback LAN/VPS URL
-      }
-    }
-  } catch (_) {/* keep LAN fallback */}
+  // We skip Vercel registry entirely because it points to a broken server.
+  // The app will now use `AppConfig.apiBase` which is populated from the environment (.env or CLI arguments).
 }
 
 class AuroraApp extends ConsumerWidget {

@@ -47,17 +47,20 @@ Track _toTrack(Map<dynamic, dynamic> m) {
 /// doesn't keep reappearing). The "Grant access" button calls [requestAudio].
 final audioPermissionProvider = FutureProvider<bool>((ref) async {
   if (await Permission.audio.status.isGranted) return true;
-  return Permission.storage.status.isGranted;
+  if (await Permission.storage.status.isGranted) return true;
+  return false;
 });
 
 /// Actually prompts for the permission (called from the gate button).
 Future<bool> requestAudioPermission() async {
-  var st = await Permission.audio.request(); // Android 13+ READ_MEDIA_AUDIO
-  if (!st.isGranted) {
-    final storage = await Permission.storage.request(); // <= Android 12
-    if (storage.isGranted) st = storage;
-  }
-  return st.isGranted;
+  // Request both concurrently to avoid hanging on Android version edge-cases.
+  final statuses = await [
+    Permission.audio,
+    Permission.storage,
+  ].request();
+
+  return statuses[Permission.audio]?.isGranted == true ||
+         statuses[Permission.storage]?.isGranted == true;
 }
 
 // Dedupe to a single in-flight scan.
