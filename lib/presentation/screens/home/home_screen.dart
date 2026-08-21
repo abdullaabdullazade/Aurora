@@ -163,7 +163,14 @@ class _ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photoUrl = user?.photoURL;
+    final providerPhoto = user?.providerData
+        .where((profile) => profile.providerId == 'google.com')
+        .map((profile) => profile.photoURL)
+        .whereType<String>()
+        .where((url) => url.isNotEmpty)
+        .firstOrNull;
+    final photoUrl =
+        (user?.photoURL?.isNotEmpty ?? false) ? user!.photoURL : providerPhoto;
     final displayName = user?.displayName?.trim() ?? '';
     final fallback = displayName.isNotEmpty
         ? displayName.characters.first.toUpperCase()
@@ -181,6 +188,7 @@ class _ProfileAvatar extends StatelessWidget {
         child: photoUrl != null && photoUrl.isNotEmpty
             ? Image.network(
                 photoUrl,
+                key: ValueKey(photoUrl),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _fallback(fallback),
               )

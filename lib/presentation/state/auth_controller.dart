@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
-  return FirebaseAuth.instance.authStateChanges();
+  // userChanges also emits profile updates (photo/display name), while
+  // authStateChanges only guarantees sign-in/sign-out events.
+  return FirebaseAuth.instance.userChanges();
 });
 
 class AuthController {
@@ -24,7 +26,32 @@ class AuthController {
 
     final UserCredential userCredential =
         await _auth.signInWithCredential(credential);
-    return userCredential.user;
+    final user = userCredential.user;
+    if (user == null) return null;
+
+    final googleProfile = userCredential.additionalUserInfo?.profile;
+    final profilePhoto = googleProfile?['picture'];
+    final profileName = googleProfile?['name'];
+    final googlePhoto =
+        googleUser.photoUrl ?? (profilePhoto is String ? profilePhoto : null);
+    final googleName =
+        googleUser.displayName ?? (profileName is String ? profileName : null);
+
+    // Firebase normally copies these fields from Google, but existing users
+    // can keep an empty profile. Persist them explicitly so every screen and
+    // future app launch sees the same avatar.
+    if ((user.photoURL == null || user.photoURL!.isEmpty) &&
+        googlePhoto != null &&
+        googlePhoto.isNotEmpty) {
+      await user.updatePhotoURL(googlePhoto);
+    }
+    if ((user.displayName == null || user.displayName!.isEmpty) &&
+        googleName != null &&
+        googleName.isNotEmpty) {
+      await user.updateDisplayName(googleName);
+    }
+    await user.reload();
+    return _auth.currentUser;
   }
 
   Future<void> signOut() async {
