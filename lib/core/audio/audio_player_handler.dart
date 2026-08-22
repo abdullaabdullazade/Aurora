@@ -5,9 +5,7 @@ import 'package:just_audio/just_audio.dart';
 ///
 /// Boot once in main():
 /// ```dart
-/// final handler = await AudioService.init(
-///   builder: () => AudioPlayerHandler(),
-///   config: const AudioServiceConfig(
+//   config: const AudioServiceConfig(
 ///     androidNotificationChannelId: 'com.aurora.music.audio',
 ///     androidNotificationChannelName: 'Aurora Playback',
 ///     androidNotificationOngoing: true,

@@ -1,0 +1,46 @@
+--- server/main.py
++++ server/main.py
+@@ -165,9 +165,8 @@
+         "quiet": True, "no_warnings": True, "skip_download": True,
+         "noplaylist": True,
+         "js_runtimes": {"node": {}},
++        "force_ipv6": True,
+         "http_headers": {
+             "User-Agent": (
+                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+@@ -176,9 +175,8 @@
+         },
+         "extractor_args": {
+             "youtube": {"player_client": ["android_vr", "ios", "web"]}
+         },
+         "socket_timeout": 12, "retries": 0, "extractor_retries": 0,
+-        "proxy": proxy,
+     }
+     try:
+@@ -525,6 +523,7 @@
+                 "format": "140/bestaudio[ext=m4a]/18",
+                 # nsig/signature solved via local nodejs (yt-dlp-ejs package).
+                 "js_runtimes": {"node": {}},
++                "force_ipv6": True,
+                 "http_headers": {
+                     "User-Agent": (
+                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+@@ -533,7 +532,7 @@
+                 },
+                 "extractor_args": {
+                     "youtube": {
+-                        "player_client": ["ios", "web", "android_vr"]
++                        "player_client": ["android_vr", "ios", "web"]
+                     }
+                 },
+                 "outtmpl": os.path.join(_CACHE_DIR, f"{video_id}.%(ext)s"),
+@@ -546,9 +545,6 @@
+                 # Dead/slow proxy is abandoned fast so we hop to a fresh IP.
+                 "socket_timeout": 12,
+             }
+-            proxy = _pick_proxy()
+-            if proxy:
+-                opts["proxy"] = proxy
+             try:
+                 # Fresh logged-in cookies (auto-refreshed from the VPS Chrome)
+                 # ride along on a clean residential IP — unlocks restricted
