@@ -1,5 +1,11 @@
 /// Runtime configuration.
 abstract final class AppConfig {
+  /// Public project links used by the About section.
+  static const String websiteUrl =
+      'https://abdullaabdullazade.github.io/Aurora/';
+  static const String repositoryUrl =
+      'https://github.com/abdullaabdullazade/Aurora';
+
   /// Vercel registry that always returns the PC resolver's current URL.
   /// Set this to your deployed registry, e.g. https://aurora-registry.vercel.app
   static const String registryUrl = String.fromEnvironment('AURORA_REGISTRY',

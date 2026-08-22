@@ -3,9 +3,13 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -31,11 +35,41 @@ jobs:
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            release_version="${GITHUB_REF_NAME#v}"
+            flutter build apk --release \
+              --build-name="$release_version" \
+              --build-number="$GITHUB_RUN_NUMBER"
+          else
+            flutter build apk --release
+          fi
+
+      - name: Prepare release files
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/Aurora-Music.apk
+          cd dist
+          sha256sum Aurora-Music.apk > Aurora-Music.apk.sha256
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: aurora-music-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            dist/Aurora-Music.apk
+            dist/Aurora-Music.apk.sha256
           retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/Aurora-Music.apk \
+            dist/Aurora-Music.apk.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --latest \
+            --title "Aurora Music $GITHUB_REF_NAME"

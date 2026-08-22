@@ -8,6 +8,8 @@
 
 real search & streaming · synced lyrics · offline downloads · on-device library · playlists
 
+**[Download latest APK](https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk)** · **[Website](https://abdullaabdullazade.github.io/Aurora/)** · **[Video demo](docs/media/aurora-demo.mp4)**
+
 </div>
 
 ---
@@ -247,6 +249,22 @@ To enable Google Sign-In and Cloud Sync:
 4. Copy the `SHA-1` (and `SHA-256`) fingerprint for your debug/release keystore and add it under **SHA certificate fingerprints** in Firebase Console. *(Without SHA-1 registered in Firebase, Google Sign-In will return an error on mobile devices).*
 
 Grant the audio permission for the **On device** tab.
+
+---
+
+## Publish an APK release
+
+The Android workflow builds an installable APK for every `main` push and pull request. To
+publish a version, push a semantic version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions uses the tag as the Android version, creates a GitHub Release with generated
+notes, and uploads `Aurora-Music.apk` plus its SHA-256 checksum. The website's download button
+always points to the newest published release.
 
 ---
 

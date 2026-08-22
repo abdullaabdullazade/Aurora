@@ -1,0 +1,17 @@
+{
+  "name": "Aurora Music",
+  "short_name": "Aurora",
+  "description": "A premium Flutter music player with synced lyrics and offline playback.",
+  "start_url": "/Aurora/",
+  "scope": "/Aurora/",
+  "display": "browser",
+  "background_color": "#08090c",
+  "theme_color": "#0b0c10",
+  "icons": [
+    {
+      "src": "icons/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

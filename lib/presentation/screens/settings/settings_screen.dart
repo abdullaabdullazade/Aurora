@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../state/favorites_controller.dart';
@@ -104,11 +107,35 @@ class SettingsScreen extends ConsumerWidget {
                 .push(MaterialPageRoute(builder: (_) => const StatsScreen())),
           ),
           const SizedBox(height: Sp.xl),
+          Text('About', style: text.labelLarge),
+          const SizedBox(height: Sp.sm),
+          _Tile(
+            icon: Icons.language_rounded,
+            title: 'Project website',
+            subtitle: 'Discover Aurora Music on the web',
+            onTap: () => _openExternalLink(context, AppConfig.websiteUrl),
+          ),
+          _Tile(
+            icon: Icons.code_rounded,
+            title: 'Source code',
+            subtitle: 'View the project on GitHub',
+            onTap: () => _openExternalLink(context, AppConfig.repositoryUrl),
+          ),
+          const SizedBox(height: Sp.xl),
           Center(
             child: Text('Aurora Music · v1.0', style: text.labelSmall),
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _openExternalLink(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open this link.')),
     );
   }
 }

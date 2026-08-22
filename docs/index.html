@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aurora Music — Premium Flutter music player</title>
+    <meta name="description" content="Aurora Music is a polished Flutter music player with YouTube search and streaming, synced lyrics, offline downloads, playlists, and a soft-dark glass interface.">
+    <meta name="keywords" content="Aurora Music, Flutter music player, synced lyrics, offline music, YouTube music client, Android music player">
+    <meta name="author" content="Abdulla Abdullazade">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#0b0c10">
+    <meta name="color-scheme" content="dark">
+
+    <link rel="canonical" href="https://abdullaabdullazade.github.io/Aurora/">
+    <link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+    <link rel="manifest" href="site.webmanifest">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Aurora Music">
+    <meta property="og:title" content="Aurora Music — Your music, beautifully yours">
+    <meta property="og:description" content="Search, stream, download, and rediscover your music in a refined Flutter player with synced lyrics and offline playback.">
+    <meta property="og:url" content="https://abdullaabdullazade.github.io/Aurora/">
+    <meta property="og:image" content="https://abdullaabdullazade.github.io/Aurora/media/social-preview.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Aurora Music landing page and app preview">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Aurora Music — Premium Flutter music player">
+    <meta name="twitter:description" content="Synced lyrics, offline downloads, playlists, and a thoughtful soft-dark interface.">
+    <meta name="twitter:image" content="https://abdullaabdullazade.github.io/Aurora/media/social-preview.png">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Aurora Music",
+        "description": "A premium Flutter music player with search and streaming, synced lyrics, offline downloads, playlists, and on-device music.",
+        "url": "https://abdullaabdullazade.github.io/Aurora/",
+        "image": "https://abdullaabdullazade.github.io/Aurora/media/04-player.png",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Android",
+        "softwareVersion": "1.0.0",
+        "downloadUrl": "https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk",
+        "author": {
+          "@type": "Person",
+          "name": "Abdulla Abdullazade",
+          "url": "https://github.com/abdullaabdullazade"
+        },
+        "codeRepository": "https://github.com/abdullaabdullazade/Aurora",
+        "programmingLanguage": "Dart"
+      }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Aurora Music home">
+        <img src="icons/logo.svg" width="36" height="36" alt="">
+        <span>Aurora</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#experience">Experience</a>
+        <a href="#technology">Technology</a>
+      </nav>
+      <a class="button button-small button-primary" href="https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk" aria-label="Download the latest Aurora Music APK">Download APK <span aria-hidden="true">↓</span></a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span></span> Built with Flutter</p>
+          <h1>Your music.<br><em>Beautifully yours.</em></h1>
+          <p class="hero-lead">Search and stream with ease, follow every lyric, keep favorites offline, and make your library feel unmistakably personal.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk">Download latest APK <span aria-hidden="true">↓</span></a>
+            <a class="button button-ghost" href="https://github.com/abdullaabdullazade/Aurora" target="_blank" rel="noreferrer">View on GitHub <span aria-hidden="true">↗</span></a>
+            <a class="button button-ghost" href="media/aurora-demo.mp4">Watch the demo <span aria-hidden="true">▶</span></a>
+          </div>
+          <p class="download-note">Android 6.0+ · Latest stable release</p>
+          <div class="hero-proof" aria-label="Highlights">
+            <div><strong>Synced</strong><span>Lyrics</span></div>
+            <div><strong>Offline</strong><span>Downloads</span></div>
+            <div><strong>Native</strong><span>On-device library</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" aria-label="Aurora Music app preview">
+          <div class="phone phone-back">
+            <img src="media/01-home.png" alt="Aurora Music home screen" width="540" height="1200">
+          </div>
+          <div class="phone phone-front">
+            <img src="media/04-player.png" alt="Aurora Music now-playing screen" width="540" height="1200">
+          </div>
+          <div class="sound-chip"><i></i><i></i><i></i><i></i><span>Now playing</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Everything in tune</p>
+          <h2>The details make<br>the difference.</h2>
+          <p>A complete music experience, shaped around fluid interaction, useful offline behavior, and the moments between play and pause.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-wide reveal">
+            <div class="feature-copy">
+              <span class="icon" aria-hidden="true">⌕</span>
+              <h3>Find it. Play it.</h3>
+              <p>Real search, live suggestions, trending picks, top charts, and recent listening—ready when inspiration strikes.</p>
+            </div>
+            <div class="feature-shot crop-search">
+              <img src="media/03-search-results.png" alt="Search results in Aurora Music" loading="lazy" width="540" height="1200">
+            </div>
+          </article>
+
+          <article class="feature-card reveal">
+            <span class="icon" aria-hidden="true">≋</span>
+            <h3>Lyrics that keep up</h3>
+            <p>Time-synced lyrics follow the song. Tap a line to seek or turn a favorite verse into a shareable card.</p>
+            <div class="mini-shot"><img src="media/05-lyrics.png" alt="Synced lyrics view" loading="lazy" width="540" height="1200"></div>
+          </article>
+
+          <article class="feature-card reveal">
+            <span class="icon" aria-hidden="true">↓</span>
+            <h3>Offline sanctuary</h3>
+            <p>Download music and lyrics, manage favorites, and keep listening when the network disappears.</p>
+            <div class="mini-shot"><img src="media/13-downloaded.png" alt="Downloaded music view" loading="lazy" width="540" height="1200"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="showcase" id="experience">
+        <div class="showcase-copy reveal">
+          <p class="eyebrow">Made for the moment</p>
+          <h2>More feeling.<br>Less interface.</h2>
+          <p>Artwork becomes atmosphere. Aurora builds a readable color system from every cover, then layers responsive glass, subtle motion, and tactile controls around the music.</p>
+          <ul class="check-list">
+            <li>Dynamic artwork-driven color</li>
+            <li>Waveform seeking with haptics</li>
+            <li>Queue, shuffle, repeat, and crossfade</li>
+            <li>Sleep timer, EQ, and playback speed</li>
+          </ul>
+        </div>
+        <div class="screen-fan reveal" aria-hidden="true">
+          <img class="fan-left" src="media/07-queue.png" alt="" loading="lazy" width="540" height="1200">
+          <img class="fan-center" src="media/06-lyric-card.png" alt="" loading="lazy" width="540" height="1200">
+          <img class="fan-right" src="media/14-crossfade.png" alt="" loading="lazy" width="540" height="1200">
+        </div>
+      </section>
+
+      <section class="section technology" id="technology">
+        <div class="section-heading centered reveal">
+          <p class="eyebrow">Under the glass</p>
+          <h2>Thoughtful inside, too.</h2>
+          <p>A clean Flutter client pairs with a FastAPI resolver, server-side extraction, range streaming, and an offline-first local library.</p>
+        </div>
+        <div class="tech-flow reveal" role="img" aria-label="Flutter app connects to FastAPI and yt-dlp, which connects to YouTube">
+          <div><small>Client</small><strong>Flutter</strong><span>Riverpod · just_audio</span></div>
+          <b aria-hidden="true">→</b>
+          <div><small>Resolver</small><strong>FastAPI</strong><span>Range proxy · cache</span></div>
+          <b aria-hidden="true">→</b>
+          <div><small>Source</small><strong>yt-dlp</strong><span>Search · streams</span></div>
+        </div>
+      </section>
+
+      <section class="cta reveal">
+        <img src="icons/logo.svg" width="72" height="72" alt="">
+        <p class="eyebrow">Press play</p>
+        <h2>Meet Aurora Music.</h2>
+        <p>Get the latest Android build, or explore the code and architecture on GitHub.</p>
+        <div class="cta-actions">
+          <a class="button button-primary" href="https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk">Download APK <span aria-hidden="true">↓</span></a>
+          <a class="button button-ghost" href="https://github.com/abdullaabdullazade/Aurora/releases/latest" target="_blank" rel="noreferrer">Release notes <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <a class="brand" href="#top"><img src="icons/logo.svg" width="30" height="30" alt=""><span>Aurora Music</span></a>
+      <p>Designed and built by Abdulla Abdullazade.</p>
+      <div><a href="https://github.com/abdullaabdullazade/Aurora">GitHub</a><a href="media/aurora-demo.mp4">Demo</a></div>
+    </footer>
+    <script src="main.js" defer></script>
+  </body>
+</html>
