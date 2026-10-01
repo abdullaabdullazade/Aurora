@@ -104,6 +104,10 @@ class PlayerState {
       );
 }
 
+class _StreamUnavailable extends HttpException {
+  _StreamUnavailable(Uri uri) : super('stream unavailable (404)', uri: uri);
+}
+
 /// Playback engine on just_audio. Remote tracks are a single AudioSource.uri
 /// so end-of-stream is detectable; the Dart queue decides what plays next.
 class PlayerController extends Notifier<PlayerState> {
@@ -135,6 +139,9 @@ class PlayerController extends Notifier<PlayerState> {
   int _midStreamReloadCount = 0;
   bool _handlingStreamError = false;
   String? _warmingId;
+
+  /// Next track whose warm-up got a 404, so its load fails at once.
+  String? _unavailableId;
   HttpClient? _warmClient;
   Future<void>? _warmFuture;
   HttpClient? _loadProbeClient;
@@ -412,6 +419,11 @@ class PlayerController extends Notifier<PlayerState> {
     String? trackId,
   }) async {
     if (!_uriIsRemote(uri)) return;
+    if (trackId != null && trackId == _unavailableId) {
+      // Only once: a second tap gets a fresh try in case it was transient.
+      _unavailableId = null;
+      throw _StreamUnavailable(uri);
+    }
 
     // Reuse an in-flight warm for this same track instead of a second GET.
     if (trackId != null &&
@@ -420,6 +432,8 @@ class PlayerController extends Notifier<PlayerState> {
       try {
         await _warmFuture;
         return;
+      } on _StreamUnavailable {
+        rethrow;
       } catch (_) {
         // Warm failed — fall through to a fresh probe.
       }
@@ -469,6 +483,9 @@ class PlayerController extends Notifier<PlayerState> {
       final res = await req.close().timeout(timeout);
       final code = res.statusCode;
       await res.drain<void>();
+      if (code == HttpStatus.notFound) {
+        throw _StreamUnavailable(uri);
+      }
       if (code >= 400) {
         throw HttpException('stream not ready ($code)', uri: uri);
       }
@@ -526,6 +543,7 @@ class PlayerController extends Notifier<PlayerState> {
       await future;
     } catch (e) {
       debugPrint('[player] warm next failed: $e');
+      if (e is _StreamUnavailable) _unavailableId = track.id;
     } finally {
       if (identical(_warmClient, client)) _warmClient = null;
       try {
@@ -941,6 +959,8 @@ class PlayerController extends Notifier<PlayerState> {
       if (_warmingId == track.id && _warmFuture != null) {
         try {
           await _warmFuture;
+        } on _StreamUnavailable {
+          rethrow;
         } catch (_) {}
       } else {
         _cancelWarm();
@@ -1021,7 +1041,9 @@ class PlayerController extends Notifier<PlayerState> {
           debugPrint('[player] load attempt ${attempt + 1}/$attempts: $e');
           if (token != _loadToken) return;
           playerBroken = settingSource;
-          if (attempt == attempts - 1) rethrow;
+          // 404 means the resolver already tried its proxies and YouTube
+          // refused the video; retrying only makes the user wait longer.
+          if (e is _StreamUnavailable || attempt == attempts - 1) rethrow;
           // setAudioSource failures can leave ExoPlayer unable to accept the
           // next source. Retry on a fresh native instance instead of forcing
           // the user to restart the whole app. Network/probe errors leave the

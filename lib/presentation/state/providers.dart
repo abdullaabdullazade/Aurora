@@ -30,13 +30,16 @@ final youtubeAccountApiProvider = Provider<YoutubeAccountApi>(
 );
 
 /// Personalized picks from listening history, liked songs, or global trends.
+/// History is read, not watched: every started track updates stats and
+/// recents, and rebuilding here would re-run the searches and reshuffle the
+/// list under the user's finger. Pull-to-refresh and account sync rebuild it.
 final forYouProvider = FutureProvider<List<Track>>((ref) async {
   ref.watch(syncRevisionProvider);
   final repo = ref.watch(musicRepositoryProvider);
-  final stats = ref.watch(listeningStatsProvider);
-  final favorites = ref.watch(favoritesProvider);
+  final stats = ref.read(listeningStatsProvider);
+  final favorites = ref.read(favoritesProvider);
   final recentIds =
-      ref.watch(localStoreProvider).recents().map((t) => t.id).toSet();
+      ref.read(localStoreProvider).recents().map((t) => t.id).toSet();
 
   final artistCounts = <String, int>{};
   for (final row in stats) {

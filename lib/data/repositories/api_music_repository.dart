@@ -50,15 +50,31 @@ class ApiMusicRepository implements MusicRepository {
   }
 
   Future<List<Track>> _search(String query, int limit,
-      {String filter = 'tracks'}) async {
+      {String filter = 'tracks', bool playableOnly = false}) async {
     final res = await _dio.get('/search', queryParameters: {
       'q': query,
       'limit': limit,
       'filter': filter,
     });
     final list = (res.data as List).cast<Map<String, dynamic>>();
-    return list.map(_fromJson).toList(growable: false);
+    return list
+        .where((j) => !playableOnly || _isPlayable(j))
+        .map(_fromJson)
+        .toList(growable: false);
   }
+
+  /// Live streams never finish downloading on the resolver, so they would
+  /// spin forever when tapped. Search results omit is_live on older servers;
+  /// a zero duration on a video is the same signal there.
+  static bool _isPlayable(Map<String, dynamic> j) {
+    if (j['live'] == true) return false;
+    final kind = Track.kindFrom(j['kind']);
+    if (kind != TrackKind.track) return true;
+    return ((j['duration'] as num?)?.toInt() ?? 0) > 0;
+  }
+
+  static const _searchCacheTtl = Duration(minutes: 30);
+  final Map<String, ({DateTime at, List<Track> tracks})> _searchCache = {};
 
   @override
   Future<List<Track>> search(String query, {String filter = 'tracks'}) {
@@ -69,8 +85,16 @@ class ApiMusicRepository implements MusicRepository {
   }
 
   @override
-  Future<List<Track>> searchTracks(String query, {int limit = 25}) =>
-      _search(query, limit, filter: 'tracks');
+  Future<List<Track>> searchTracks(String query, {int limit = 25}) async {
+    final key = '$query|$limit';
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchCacheTtl) {
+      return hit.tracks;
+    }
+    final tracks = await _search(query, limit, playableOnly: true);
+    _searchCache[key] = (at: DateTime.now(), tracks: tracks);
+    return tracks;
+  }
 
   @override
   Future<List<Track>> trending({bool refresh = false}) async {
@@ -85,7 +109,7 @@ class ApiMusicRepository implements MusicRepository {
       'popular songs today',
     ];
     final q = queries[DateTime.now().day % queries.length];
-    return _cache['trending'] = await _search(q, 20);
+    return _cache['trending'] = await _search(q, 20, playableOnly: true);
   }
 
   @override
@@ -105,13 +129,15 @@ class ApiMusicRepository implements MusicRepository {
       // Playlist unavailable on resolver — fall back to search below.
     }
 
-    return _cache['topCharts'] = await _search('top charts this week', 25);
+    return _cache['topCharts'] =
+        await _search('top charts this week', 25, playableOnly: true);
   }
 
   @override
   void invalidateRecommendationCaches() {
     _cache.remove('trending');
     _cache.remove('topCharts');
+    _searchCache.clear();
   }
 
   @override
