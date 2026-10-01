@@ -151,7 +151,9 @@ class PlayerController extends Notifier<PlayerState> {
   PlayerState build() {
     _createPlayer();
     _wireAudioSession();
+    listenSelf((_, next) => _syncNotificationControls(next));
     ref.onDispose(() {
+      JustAudioBackground.clearQueueControls();
       _sleepTimer?.cancel();
       _fadeTimer?.cancel();
       _stopPositionPoll();
@@ -159,7 +161,26 @@ class PlayerController extends Notifier<PlayerState> {
       _closeLoadProbe();
       _player.dispose();
     });
-    return _initialStateFromSession() ?? const PlayerState();
+    final initial = _initialStateFromSession() ?? const PlayerState();
+    _syncNotificationControls(initial);
+    return initial;
+  }
+
+  ({bool previous, bool next})? _notificationSkips;
+
+  /// just_audio only ever holds the current remote track, so the
+  /// notification / lock screen / headset skip buttons follow this queue.
+  /// next() wraps to the start, matching the in-app button.
+  void _syncNotificationControls(PlayerState s) {
+    final skips = (previous: s.queue.isNotEmpty, next: s.queue.length > 1);
+    if (skips == _notificationSkips) return;
+    _notificationSkips = skips;
+    JustAudioBackground.setQueueControls(
+      hasPrevious: skips.previous,
+      hasNext: skips.next,
+      onNext: next,
+      onPrevious: previous,
+    );
   }
 
   /// Restores queue/position for the mini-player without loading audio yet.
