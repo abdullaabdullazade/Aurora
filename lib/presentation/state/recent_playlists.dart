@@ -5,8 +5,12 @@ import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
 import 'providers.dart';
 
+/// Bumping the revision rebuilds many providers (some hit the network), so
+/// it waits until the tapped track has had a chance to start loading. The
+/// controller is read now because the calling widget may be gone by then.
 Future<void> _bump(WidgetRef ref) async {
-  ref.read(syncRevisionProvider.notifier).state++;
+  final revision = ref.read(syncRevisionProvider.notifier);
+  Future<void>.delayed(const Duration(seconds: 2), () => revision.state++);
 }
 
 /// Records a library playlist as recently played (Home 2×2).

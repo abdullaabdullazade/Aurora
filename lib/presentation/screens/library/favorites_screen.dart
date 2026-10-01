@@ -14,7 +14,8 @@ class FavoritesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final liked = ref.watch(favoritesProvider);
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     final text = Theme.of(context).textTheme;
     final total =
         liked.fold(Duration.zero, (s, t) => s + t.duration);
@@ -121,7 +122,7 @@ class FavoritesScreen extends ConsumerWidget {
               itemCount: liked.length,
               itemBuilder: (_, i) => TrackTile(
                 track: liked[i],
-                active: playing?.id == liked[i].id,
+                active: playingId == liked[i].id,
                 onTap: () => ref
                     .read(playerControllerProvider.notifier)
                     .playQueue(liked, startAt: i),

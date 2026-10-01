@@ -113,13 +113,23 @@ class PlayerController extends Notifier<PlayerState> {
   Timer? _sleepTimer;
   DateTime? _sleepEnd;
   double _baseVolume = 1.0;
-  Timer? _sessionDebounce;
+  static const _persistInterval = Duration(seconds: 5);
+  DateTime _lastPersistAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _positionPoll;
   bool _wasPlaying = false;
   bool _advancing = false;
   bool _userPaused = false;
   bool _sessionRestorePending = false;
   Duration _restoredStartAt = Duration.zero;
+
+  /// A source was loaded without autoplay (restored session); stays set until
+  /// something actually starts playback, so app resume does not auto-play it.
+  bool _loadedPaused = false;
+
+  /// Whether the in-flight load should start playing. Toggle flips it while
+  /// loading instead of restarting the load.
+  bool _autoplayRequested = false;
+  Duration? _seekDuringLoad;
   String? _advanceFromId;
   DateTime? _stuckSince;
   int _midStreamReloadCount = 0;
@@ -127,7 +137,8 @@ class PlayerController extends Notifier<PlayerState> {
   String? _warmingId;
   HttpClient? _warmClient;
   Future<void>? _warmFuture;
-  Future<void> _streamProbeChain = Future<void>.value();
+  HttpClient? _loadProbeClient;
+  Future<void>? _recreating;
 
   @override
   PlayerState build() {
@@ -136,9 +147,9 @@ class PlayerController extends Notifier<PlayerState> {
     ref.onDispose(() {
       _sleepTimer?.cancel();
       _fadeTimer?.cancel();
-      _sessionDebounce?.cancel();
       _stopPositionPoll();
       _cancelWarm();
+      _closeLoadProbe();
       _player.dispose();
     });
     return _initialStateFromSession() ?? const PlayerState();
@@ -154,12 +165,24 @@ class PlayerController extends Notifier<PlayerState> {
     final index = session.index.clamp(0, queue.length - 1);
     _sessionRestorePending = true;
     _restoredStartAt = session.position;
+    Future.microtask(_preloadRestoredSession);
     return PlayerState(
       queue: queue,
       index: index,
       position: session.position,
       duration: queue[index].duration,
     );
+  }
+
+  /// Load the restored track paused, so play on the notification, lock screen
+  /// or a headset works right after a cold start, not only the in-app button.
+  void _preloadRestoredSession() {
+    if (!_sessionRestorePending || !state.hasTrack) return;
+    unawaited(_loadCurrent(
+      autoplay: false,
+      startAt: _restoredStartAt,
+      recordRecent: false,
+    ));
   }
 
   void _createPlayer() {
@@ -181,19 +204,36 @@ class PlayerController extends Notifier<PlayerState> {
   /// Replace a native player that stopped accepting sources.
   /// Must dispose the old instance first — just_audio_background allows only
   /// one player id at a time.
-  Future<void> _recreatePlayer() async {
-    _stopPositionPoll();
-    _concat = null;
-    _windowQueueIndices = [];
-    final broken = _player;
-    try {
-      await broken.dispose();
-    } catch (e) {
-      debugPrint('[player] dispose before recreate failed: $e');
+  /// Concurrent callers share one recreate, and loads wait for it via
+  /// [_awaitPlayerRecreate] so no source is set on a player being disposed.
+  Future<void> _recreatePlayer() {
+    return _recreating ??= () async {
+      try {
+        _stopPositionPoll();
+        _concat = null;
+        _windowQueueIndices = [];
+        final broken = _player;
+        try {
+          await broken.dispose();
+        } catch (e) {
+          debugPrint('[player] dispose before recreate failed: $e');
+        }
+        _createPlayer();
+        await _player.setVolume(_baseVolume);
+        await _player.setSpeed(state.speed);
+      } finally {
+        _recreating = null;
+      }
+    }();
+  }
+
+  Future<void> _awaitPlayerRecreate() async {
+    final pending = _recreating;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {}
     }
-    _createPlayer();
-    await _player.setVolume(_baseVolume);
-    await _player.setSpeed(state.speed);
   }
 
   Future<void> _wireAudioSession() async {
@@ -205,6 +245,10 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   int _loadToken = 0;
+
+  /// just_audio can leave setAudioSource pending forever when platform
+  /// activation fails; treat that as a broken native player and recreate it.
+  static const _setSourceTimeout = Duration(seconds: 30);
 
   /// Position of the last tick, used to accumulate real listening time.
   /// Seeks and track switches produce jumps, so only small forward deltas
@@ -303,6 +347,7 @@ class PlayerController extends Notifier<PlayerState> {
       if (!isCurrentPlayer()) return;
       final wasPlaying = _wasPlaying;
       state = state.copyWith(isPlaying: ps.playing);
+      if (ps.playing) _loadedPaused = false;
       _syncPositionPoll(ps.playing);
       if (wasPlaying && !ps.playing) {
         unawaited(persistSessionNow());
@@ -363,7 +408,7 @@ class PlayerController extends Notifier<PlayerState> {
   /// fast Range hit on the same URL.
   Future<void> _ensureStreamReady(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 90),
+    Duration timeout = const Duration(seconds: 45),
     String? trackId,
   }) async {
     if (!_uriIsRemote(uri)) return;
@@ -382,23 +427,28 @@ class PlayerController extends Notifier<PlayerState> {
       _cancelWarm();
     }
 
-    await _enqueueStreamProbe(() => _httpRangeProbe(uri, timeout: timeout));
+    // Owned by the current load so the next load can abort it (no global
+    // queue: a stale probe must never delay a newly chosen track).
+    _closeLoadProbe();
+    final client = HttpClient();
+    _loadProbeClient = client;
+    try {
+      await _httpRangeProbe(uri, timeout: timeout, client: client);
+    } finally {
+      if (identical(_loadProbeClient, client)) _loadProbeClient = null;
+      try {
+        client.close(force: true);
+      } catch (_) {}
+    }
   }
 
-  Future<void> _enqueueStreamProbe(Future<void> Function() action) {
-    final done = Completer<void>();
-    final previous = _streamProbeChain;
-    _streamProbeChain = done.future;
-    return () async {
-      try {
-        await previous;
-      } catch (_) {}
-      try {
-        await action();
-      } finally {
-        if (!done.isCompleted) done.complete();
-      }
-    }();
+  void _closeLoadProbe() {
+    final client = _loadProbeClient;
+    _loadProbeClient = null;
+    if (client == null) return;
+    try {
+      client.close(force: true);
+    } catch (_) {}
   }
 
   Future<void> _httpRangeProbe(
@@ -453,13 +503,13 @@ class PlayerController extends Notifier<PlayerState> {
     }
     if (nextIdx == state.index) return;
     final track = q[nextIdx];
-    if (track.localPath != null) return;
+    if (track.localPath != null || _isMediaStoreId(track.id)) return;
     if (_warmingId == track.id) return;
     _cancelWarm();
     _warmingId = track.id;
     final client = HttpClient();
     _warmClient = client;
-    final future = _enqueueStreamProbe(() async {
+    final future = () async {
       final uri = await ref.read(musicRepositoryProvider).resolveStream(track);
       if (!_uriIsRemote(uri)) return;
       if (_warmingId != track.id) {
@@ -470,7 +520,7 @@ class PlayerController extends Notifier<PlayerState> {
         timeout: const Duration(seconds: 90),
         client: client,
       );
-    });
+    }();
     _warmFuture = future;
     try {
       await future;
@@ -544,6 +594,15 @@ class PlayerController extends Notifier<PlayerState> {
   void playSingle(Track track) => playQueue([track]);
 
   Future<void> toggle() async {
+    if (state.isLoading) {
+      if (_autoplayRequested && !_userPaused) {
+        _userPaused = true;
+      } else {
+        _userPaused = false;
+        _autoplayRequested = true;
+      }
+      return;
+    }
     if (_player.playing) {
       await _pauseInternal();
     } else if (_player.processingState == ja.ProcessingState.idle &&
@@ -570,6 +629,10 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   Future<void> pause() async {
+    if (state.isLoading) {
+      _userPaused = true;
+      return;
+    }
     if (_player.playing) {
       await _pauseInternal();
       await persistSessionNow();
@@ -607,12 +670,8 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   Future<void> previous() async {
-    if (state.position.inSeconds > 3) {
-      await _player.seek(Duration.zero);
-      return;
-    }
-    if (state.index == 0) {
-      await _player.seek(Duration.zero);
+    if (state.position.inSeconds > 3 || state.index == 0) {
+      await _seekTo(Duration.zero);
       return;
     }
     _userPaused = false;
@@ -624,7 +683,23 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   Future<void> seek(double fraction) =>
-      _player.seek(state.total * fraction.clamp(0.0, 1.0));
+      _seekTo(state.total * fraction.clamp(0.0, 1.0));
+
+  /// Seeking an empty or still-loading player is a no-op in just_audio, so
+  /// remember the target and apply it once the source is set.
+  Future<void> _seekTo(Duration p) async {
+    if (_sessionRestorePending) _restoredStartAt = p;
+    if (state.isLoading ||
+        _player.processingState == ja.ProcessingState.idle) {
+      if (state.isLoading) _seekDuringLoad = p;
+      state = state.copyWith(position: p);
+      return;
+    }
+    await _player.seek(p);
+    // The poll only runs while playing; a paused seek must still be saved.
+    state = state.copyWith(position: p);
+    if (!_player.playing) unawaited(persistSessionNow());
+  }
 
   void _onNativeIndexChanged(int newIdx) {
     if (newIdx < 0 || newIdx >= _windowQueueIndices.length) return;
@@ -683,7 +758,7 @@ class PlayerController extends Notifier<PlayerState> {
   /// After returning from background / lock screen: finish a stuck advance or
   /// resume play when the next source loaded but autoplay did not stick.
   Future<void> onAppResumed() async {
-    if (_userPaused || !state.hasTrack) return;
+    if (_userPaused || _loadedPaused || !state.hasTrack) return;
     if (_sessionRestorePending || state.isLoading || _advancing) return;
     final ps = _player.processingState;
     if (ps == ja.ProcessingState.completed ||
@@ -701,14 +776,19 @@ class PlayerController extends Notifier<PlayerState> {
     }
   }
 
+  /// MediaStore rows have short numeric ids; YouTube ids are 11 characters.
+  static bool _isMediaStoreId(String id) =>
+      id.length < 11 && int.tryParse(id) != null;
+
   Future<Uri> _getTrackUri(Track track) async {
+    // Device tracks: use the content URI to bypass Android's scoped storage
+    // native caching on fresh permissions. Checked before localPath because
+    // older saved sessions dropped the path, and a numeric id must never be
+    // sent to the server.
+    if (_isMediaStoreId(track.id)) {
+      return Uri.parse('content://media/external/audio/media/${track.id}');
+    }
     if (track.localPath != null) {
-      // Local files: if it's a MediaStore track (numeric ID), use content URI
-      // to bypass Android's scoped storage native caching on fresh permissions.
-      final isNumeric = int.tryParse(track.id) != null;
-      if (isNumeric) {
-        return Uri.parse('content://media/external/audio/media/${track.id}');
-      }
       final path = track.localPath!;
       if (path.startsWith('content://')) return Uri.parse(path);
       if (await File(path).exists()) return Uri.file(path);
@@ -838,6 +918,15 @@ class PlayerController extends Notifier<PlayerState> {
     final track = state.current;
     if (track == null) return;
     final token = ++_loadToken;
+    // Any explicit load (next/previous/reload) ends the lazy-restore mode.
+    _sessionRestorePending = false;
+    _restoredStartAt = Duration.zero;
+    _autoplayRequested = autoplay;
+    _loadedPaused = !autoplay;
+    _seekDuringLoad = null;
+    // A new load owns the network: abort the previous load's probe so it
+    // cannot hold this one back.
+    _closeLoadProbe();
     _advancing = true;
     _stuckSince = null;
     _cancelFade();
@@ -845,8 +934,8 @@ class PlayerController extends Notifier<PlayerState> {
       isLoading: true,
       position: startAt > Duration.zero ? startAt : Duration.zero,
     );
-    if (recordRecent) _recordRecent(track);
     var failed = false;
+    var playerBroken = false;
     try {
       // Reuse warm for this id; cancel warm for any other id.
       if (_warmingId == track.id && _warmFuture != null) {
@@ -863,35 +952,53 @@ class PlayerController extends Notifier<PlayerState> {
       // Do not stop() first: that tears down the media foreground service
       // before the next source can play. setAudioSource replaces the item.
 
-      // Warm the remote stream first (long timeout), then hand ExoPlayer a
-      // cache hit. Retry the same track on transient resolver / player errors.
-      final attempts = track.localPath == null ? 5 : 2;
+      // Warm the remote stream first, then hand ExoPlayer a cache hit. Retry
+      // the same track on transient resolver / player errors.
+      final remote = _uriIsRemote(uri);
+      final attempts = remote ? 3 : 2;
       for (var attempt = 0; attempt < attempts; attempt++) {
+        var settingSource = false;
         try {
-          if (_uriIsRemote(uri)) {
+          if (remote) {
             await _ensureStreamReady(uri, trackId: track.id);
+            if (token != _loadToken) return;
+            await _awaitPlayerRecreate();
             if (token != _loadToken) return;
             _lastSourceSetTime = DateTime.now();
             _concat = null;
             _windowQueueIndices = [state.index];
             _concatBaseIndex = 0;
-            await _player.setAudioSource(
-              _audioItem(track, uri),
-              initialPosition: startAt,
-            );
+            settingSource = true;
+            await _player
+                .setAudioSource(
+                  _audioItem(track, uri),
+                  initialPosition: startAt,
+                )
+                .timeout(_setSourceTimeout);
           } else {
-            _lastSourceSetTime = DateTime.now();
             final window = await _sourceWindow(track, uri, token);
             if (token != _loadToken) return;
+            await _awaitPlayerRecreate();
+            if (token != _loadToken) return;
+            _lastSourceSetTime = DateTime.now();
             _concat = window.source;
             _concatBaseIndex = window.initialIndex;
-            await _player.setAudioSource(
-              window.source,
-              initialIndex: window.initialIndex,
-              initialPosition: startAt,
-            );
+            settingSource = true;
+            await _player
+                .setAudioSource(
+                  window.source,
+                  initialIndex: window.initialIndex,
+                  initialPosition: startAt,
+                )
+                .timeout(_setSourceTimeout);
           }
-          if (startAt > Duration.zero &&
+          settingSource = false;
+          if (token != _loadToken) return;
+          final pendingSeek = _seekDuringLoad;
+          _seekDuringLoad = null;
+          if (pendingSeek != null) {
+            await _player.seek(pendingSeek);
+          } else if (startAt > Duration.zero &&
               _player.position < const Duration(seconds: 2)) {
             await _player.seek(startAt);
           }
@@ -899,7 +1006,7 @@ class PlayerController extends Notifier<PlayerState> {
           // Source is ready — drop the spinner so the scrubber can move even
           // if play() takes another moment.
           state = state.copyWith(isLoading: false);
-          if (autoplay) {
+          if (_autoplayRequested) {
             final started = await _startPlayback(token);
             // Source is ready — do not recreate just because play() failed
             // (common while backgrounded). Resume / tap play can finish it.
@@ -913,14 +1020,18 @@ class PlayerController extends Notifier<PlayerState> {
         } catch (e) {
           debugPrint('[player] load attempt ${attempt + 1}/$attempts: $e');
           if (token != _loadToken) return;
+          playerBroken = settingSource;
           if (attempt == attempts - 1) rethrow;
           // setAudioSource failures can leave ExoPlayer unable to accept the
           // next source. Retry on a fresh native instance instead of forcing
-          // the user to restart the whole app.
-          await _recreatePlayer();
+          // the user to restart the whole app. Network/probe errors leave the
+          // player intact, so they only back off.
+          if (playerBroken) await _recreatePlayer();
+          if (token != _loadToken) return;
           state = state.copyWith(isLoading: true);
           await Future<void>.delayed(
               Duration(milliseconds: 500 * (attempt + 1)));
+          if (token != _loadToken) return;
         }
       }
 
@@ -930,11 +1041,12 @@ class PlayerController extends Notifier<PlayerState> {
       if (track.id != _advanceFromId) _advanceFromId = null;
       _applyPalette(track);
       await _persistSession();
+      if (recordRecent) _recordRecentDeferred(track);
       if (_player.playing) unawaited(_warmNextTrack());
     } catch (e, st) {
       debugPrint('[player] load failed: $e\n$st');
       if (token == _loadToken) {
-        await _recreatePlayer();
+        if (playerBroken) await _recreatePlayer();
         failed = true;
       }
     } finally {
@@ -942,7 +1054,11 @@ class PlayerController extends Notifier<PlayerState> {
         _advancing = false;
         _handlingStreamError = false;
         if (failed) {
-          state = state.copyWith(isLoading: false, error: 'Playback failed');
+          // A silent restore preload must not greet the user with an error.
+          state = state.copyWith(
+            isLoading: false,
+            error: _autoplayRequested ? 'Playback failed' : null,
+          );
         } else if (state.isLoading) {
           state = state.copyWith(isLoading: false);
         }
@@ -1105,6 +1221,7 @@ class PlayerController extends Notifier<PlayerState> {
       idx += 1;
     }
     state = state.copyWith(queue: list, index: idx);
+    unawaited(persistSessionNow());
   }
 
   // --- Sleep timer (with 10s fade-out) ----------------------------------
@@ -1158,28 +1275,27 @@ class PlayerController extends Notifier<PlayerState> {
         .toList(growable: false);
   }
 
+  /// Throttled, not debounced: position ticks arrive every 200 ms, so a
+  /// debounce would never fire while a track keeps playing.
   void _schedulePersistSession() {
     if (!ref.read(resumePlaybackProvider)) return;
     if (!state.hasTrack) return;
-    _sessionDebounce?.cancel();
-    _sessionDebounce = Timer(const Duration(seconds: 3), () {
-      unawaited(_persistSession());
-    });
+    if (DateTime.now().difference(_lastPersistAt) < _persistInterval) return;
+    unawaited(_persistSession());
   }
 
   /// Immediate save — used on pause and when the app backgrounds.
-  Future<void> persistSessionNow() async {
-    _sessionDebounce?.cancel();
-    await _persistSession();
-  }
+  Future<void> persistSessionNow() => _persistSession();
 
   Future<void> _persistSession() async {
     if (!ref.read(resumePlaybackProvider)) return;
     if (!state.hasTrack || state.queue.isEmpty) return;
+    _lastPersistAt = DateTime.now();
+    // Right after a pause just_audio's position can still report the value
+    // from when the source was set; the polled state.position is accurate.
     final position = _sessionRestorePending
         ? _restoredStartAt
-        : (state.isLoading ||
-                _player.processingState == ja.ProcessingState.idle
+        : (state.isLoading || !_player.playing
             ? state.position
             : _player.position);
     await ref.read(localStoreProvider).savePlaybackSession(
@@ -1187,6 +1303,15 @@ class PlayerController extends Notifier<PlayerState> {
           index: state.index,
           position: position,
         );
+  }
+
+  /// Recents/stats writes trigger a sync push and invalidate several
+  /// providers that hit the network; keep that off the critical path of
+  /// starting a track, and skip tracks the user skipped right away.
+  void _recordRecentDeferred(Track t) {
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      if (state.current?.id == t.id) unawaited(_recordRecent(t));
+    });
   }
 
   Future<void> _recordRecent(Track t) async {

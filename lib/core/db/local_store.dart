@@ -234,7 +234,8 @@ class LocalStore {
     }
     await _settings.put(_playbackSessionKey, {
       'version': 1,
-      'queue': queue.map(_portableTrack).toList(),
+      // The session never leaves this device, so local paths stay valid.
+      'queue': queue.map((t) => t.toJson()).toList(),
       'index': safeIndex,
       'positionMs': positionMs,
       'savedAt': DateTime.now().millisecondsSinceEpoch ~/ 1000,

@@ -132,16 +132,16 @@ class PlaylistBrowseScreen extends ConsumerWidget {
                           },
                         ),
                         FilledButton.icon(
-                          onPressed: () async {
-                            await recordYoutubePlaylistPlay(
+                          onPressed: () {
+                            ref
+                                .read(playerControllerProvider.notifier)
+                                .playQueue(tracks);
+                            recordYoutubePlaylistPlay(
                               ref,
                               seed: seed,
                               title: title,
                               tracks: tracks,
                             );
-                            ref
-                                .read(playerControllerProvider.notifier)
-                                .playQueue(tracks);
                           },
                           icon: const Icon(Icons.play_arrow_rounded),
                           label: const Text('Play all'),
@@ -161,16 +161,16 @@ class PlaylistBrowseScreen extends ConsumerWidget {
                   itemCount: tracks.length,
                   itemBuilder: (_, i) => TrackTile(
                     track: tracks[i],
-                    onTap: () async {
-                      await recordYoutubePlaylistPlay(
+                    onTap: () {
+                      ref
+                          .read(playerControllerProvider.notifier)
+                          .playQueue(tracks, startAt: i);
+                      recordYoutubePlaylistPlay(
                         ref,
                         seed: seed,
                         title: title,
                         tracks: tracks,
                       );
-                      ref
-                          .read(playerControllerProvider.notifier)
-                          .playQueue(tracks, startAt: i);
                     },
                     trailing: IconButton(
                       icon: const Icon(

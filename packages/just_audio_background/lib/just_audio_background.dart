@@ -539,10 +539,30 @@ class _PlayerAudioHandler extends BaseAudioHandler
           AndroidEqualizerBandSetGainRequest request) async =>
       await (await _player).androidEqualizerBandSetGain(request);
 
+  /// The native Equalizer only exists once ExoPlayer has an audio session id,
+  /// which a fresh player may not have yet. just_audio awaits this call while
+  /// activating the platform, and a throw there leaves setAudioSource pending
+  /// forever, so retry briefly and then report an empty band list instead.
   Future<AndroidEqualizerGetParametersResponse>
       customAndroidEqualizerGetParameters(
-              AndroidEqualizerGetParametersRequest request) async =>
-          await (await _player).androidEqualizerGetParameters(request);
+          AndroidEqualizerGetParametersRequest request) async {
+    final player = await _player;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await player.androidEqualizerGetParameters(request);
+      } catch (e) {
+        debugPrint('[player] equalizer not ready (${attempt + 1}/5): $e');
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+    }
+    return AndroidEqualizerGetParametersResponse(
+      parameters: AndroidEqualizerParametersMessage(
+        minDecibels: 0,
+        maxDecibels: 0,
+        bands: const [],
+      ),
+    );
+  }
 
   Future<AndroidLoudnessEnhancerSetTargetGainResponse>
       customAndroidLoudnessEnhancerSetTargetGain(
@@ -660,11 +680,15 @@ class _PlayerAudioHandler extends BaseAudioHandler
     await (await _player).pause(PauseRequest());
   }
 
+  /// Also forwards the refreshed event to the Dart AudioPlayer: it
+  /// extrapolates position from the last event's updateTime, so a stale one
+  /// makes its position run ahead after play/pause from the notification.
   void _updatePosition() {
     _justAudioEvent = _justAudioEvent.copyWith(
       updatePosition: currentPosition,
       updateTime: DateTime.now(),
     );
+    customEvent.add(_justAudioEvent);
   }
 
   @override

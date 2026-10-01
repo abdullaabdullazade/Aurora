@@ -27,7 +27,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
 
     final tracks = playlist.tracks;
     final seed = tracks.isEmpty ? AppColors.accent : tracks.first.accent;
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
 
     return Scaffold(
       backgroundColor: AppColors.voidBlack,
@@ -93,22 +94,22 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   IconButton(
                     onPressed: tracks.isEmpty
                         ? null
-                        : () async {
-                            await recordLibraryPlaylistPlay(ref, playlist);
+                        : () {
                             ref
                                 .read(playerControllerProvider.notifier)
                                 .playQueue(tracks, startAt: 0);
+                            recordLibraryPlaylistPlay(ref, playlist);
                           },
                     icon: const Icon(Icons.shuffle_rounded),
                     color: AppColors.textSecondary,
                   ),
                   _PlayAllButton(
                     enabled: tracks.isNotEmpty,
-                    onTap: () async {
-                      await recordLibraryPlaylistPlay(ref, playlist);
+                    onTap: () {
                       ref
                           .read(playerControllerProvider.notifier)
                           .playQueue(tracks, startAt: 0);
+                      recordLibraryPlaylistPlay(ref, playlist);
                     },
                   ),
                 ],
@@ -140,12 +141,12 @@ class PlaylistDetailScreen extends ConsumerWidget {
                     .removeTrack(playlist.id, tracks[i].id),
                 child: TrackTile(
                   track: tracks[i],
-                  active: playing?.id == tracks[i].id,
-                  onTap: () async {
-                    await recordLibraryPlaylistPlay(ref, playlist);
+                  active: playingId == tracks[i].id,
+                  onTap: () {
                     ref
                         .read(playerControllerProvider.notifier)
                         .playQueue(tracks, startAt: i);
+                    recordLibraryPlaylistPlay(ref, playlist);
                   },
                 ),
               ),

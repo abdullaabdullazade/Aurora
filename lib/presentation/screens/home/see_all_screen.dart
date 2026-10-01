@@ -13,7 +13,8 @@ class SeeAllScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     return Scaffold(
       backgroundColor: AppColors.voidBlack,
       appBar: AppBar(
@@ -26,7 +27,7 @@ class SeeAllScreen extends ConsumerWidget {
         itemCount: tracks.length,
         itemBuilder: (_, i) => TrackTile(
           track: tracks[i],
-          active: playing?.id == tracks[i].id,
+          active: playingId == tracks[i].id,
           onTap: () => ref
               .read(playerControllerProvider.notifier)
               .playQueue(tracks, startAt: i),
