@@ -1,0 +1,16 @@
+---
+description: How to build the release APK for this project
+alwaysApply: true
+---
+
+# Building the APK
+
+Always build the release APK with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_apk.ps1
+```
+
+It runs `flutter build apk --release --dart-define-from-file=.env` and copies the result to `dist/Aurora-Music-v<version>-build<n>.apk` (version from `pubspec.yaml`). Tell the user the path in `dist/`, not `build/app/outputs/...`.
+
+`dist/` is git-ignored; never commit APKs.
