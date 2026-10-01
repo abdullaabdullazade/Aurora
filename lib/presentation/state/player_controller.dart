@@ -678,6 +678,36 @@ class PlayerController extends Notifier<PlayerState> {
     }
   }
 
+  /// Ends the session: no mini-player, no notification, and nothing to
+  /// restore on the next launch. Shuffle/repeat are preferences and stay.
+  Future<void> close() async {
+    _loadToken++;
+    _cancelWarm();
+    _closeLoadProbe();
+    _cancelFade();
+    _sleepTimer?.cancel();
+    _sleepEnd = null;
+    _stopPositionPoll();
+    _sessionRestorePending = false;
+    _seekDuringLoad = null;
+    _autoplayRequested = false;
+    _loadedPaused = false;
+    _userPaused = true;
+    state = PlayerState(
+      shuffle: state.shuffle,
+      repeat: state.repeat,
+      volume: state.volume,
+      speed: state.speed,
+    );
+    try {
+      await _player.stop();
+      await _player.setVolume(_baseVolume);
+    } catch (e) {
+      debugPrint('[player] stop on close failed: $e');
+    }
+    await ref.read(localStoreProvider).clearPlaybackSession();
+  }
+
   Future<void> _pauseInternal() async {
     _userPaused = true;
     _cancelFade();
