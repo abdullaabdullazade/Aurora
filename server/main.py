@@ -777,7 +777,10 @@ def search(
                 "https://www.youtube.com/results?"
                 f"search_query={quote_plus(search_q)}&sp={_YT_SP_PLAYLIST}"
             )
-            with _ydl(_flat_opts()) as ydl:
+            opts = _flat_opts()
+            # Without a cap yt-dlp walks every results page (~250 hits, 10-25s).
+            opts["playlistend"] = max(1, min(limit, 50))
+            with _ydl(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"search failed: {e}") from e
