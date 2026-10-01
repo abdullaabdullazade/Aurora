@@ -44,6 +44,10 @@ class MockMusicRepository implements MusicRepository {
       search(query);
 
   @override
+  Future<List<Track>> searchPlaylists(String query, {int limit = 10}) =>
+      search(query, filter: 'playlists');
+
+  @override
   Future<List<Track>> topCharts() => _delayed(MockTracks.trending);
 
   @override

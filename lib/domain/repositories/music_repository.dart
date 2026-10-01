@@ -11,6 +11,10 @@ abstract interface class MusicRepository {
   /// Resolver search without extra query shaping.
   Future<List<Track>> searchTracks(String query, {int limit = 25});
 
+  /// YouTube playlist search for Home recommendations (cached like
+  /// [searchTracks]).
+  Future<List<Track>> searchPlaylists(String query, {int limit = 10});
+
   /// Global chart tracks from a curated YouTube playlist.
   Future<List<Track>> topCharts();
 

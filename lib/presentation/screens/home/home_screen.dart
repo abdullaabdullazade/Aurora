@@ -56,6 +56,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final forYou = ref.watch(forYouProvider);
+    final playlistsForYou = ref.watch(playlistsForYouProvider);
     final trending = ref.watch(trendingProvider);
     final charts = ref.watch(topChartsProvider);
     final recent = ref.watch(recentlyPlayedProvider);
@@ -74,6 +75,7 @@ class HomeScreen extends ConsumerWidget {
       onRefresh: () async {
         ref.read(musicRepositoryProvider).invalidateRecommendationCaches();
         ref.invalidate(forYouProvider);
+        ref.invalidate(playlistsForYouProvider);
         ref.invalidate(trendingProvider);
         ref.invalidate(topChartsProvider);
         ref.invalidate(quickDownloadsProvider);
@@ -171,6 +173,16 @@ class HomeScreen extends ConsumerWidget {
               emptyTitle: 'Nothing picked yet',
               emptySubtitle: 'Listen to a few tracks and we\'ll learn your taste.',
               onRetry: () => ref.invalidate(forYouProvider),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SectionCarousel(
+              title: 'Playlists for you',
+              data: playlistsForYou,
+              cardSize: 168,
+              emptyTitle: 'No playlists yet',
+              emptySubtitle: 'Pull down to refresh in a moment.',
+              onRetry: () => ref.invalidate(playlistsForYouProvider),
             ),
           ),
           SliverToBoxAdapter(

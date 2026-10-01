@@ -97,6 +97,18 @@ class ApiMusicRepository implements MusicRepository {
   }
 
   @override
+  Future<List<Track>> searchPlaylists(String query, {int limit = 10}) async {
+    final key = 'playlists|$query|$limit';
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchCacheTtl) {
+      return hit.tracks;
+    }
+    final playlists = await _search(query, limit, filter: 'playlists');
+    _searchCache[key] = (at: DateTime.now(), tracks: playlists);
+    return playlists;
+  }
+
+  @override
   Future<List<Track>> trending({bool refresh = false}) async {
     if (refresh) _cache.remove('trending');
     final cached = _cache['trending'];

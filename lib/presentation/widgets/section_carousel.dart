@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../domain/entities/track.dart';
 import '../screens/home/see_all_screen.dart';
+import '../screens/search/playlist_browse_screen.dart';
 import '../state/player_controller.dart';
 import 'section_state_card.dart';
 import 'skeletons.dart';
@@ -91,9 +92,14 @@ class SectionCarousel extends ConsumerWidget {
                       child: TrackCard(
                         track: tracks[i],
                         size: cardSize,
-                        onTap: () => ref
-                            .read(playerControllerProvider.notifier)
-                            .playQueue(tracks, startAt: i),
+                        onTap: () => tracks[i].isCollection
+                            ? Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) =>
+                                    PlaylistBrowseScreen(seed: tracks[i]),
+                              ))
+                            : ref
+                                .read(playerControllerProvider.notifier)
+                                .playQueue(tracks, startAt: i),
                       ),
                     ),
                   ),

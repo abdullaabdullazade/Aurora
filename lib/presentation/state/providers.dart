@@ -41,22 +41,7 @@ final forYouProvider = FutureProvider<List<Track>>((ref) async {
   final recentIds =
       ref.read(localStoreProvider).recents().map((t) => t.id).toSet();
 
-  final artistCounts = <String, int>{};
-  for (final row in stats) {
-    final artist = row.track.artist.trim();
-    if (artist.isEmpty || artist == 'Unknown') continue;
-    artistCounts[artist] = (artistCounts[artist] ?? 0) + row.count;
-  }
-  final topArtists = artistCounts.entries.toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
-  var artists = topArtists.take(3).map((e) => e.key).toList();
-
-  if (artists.isEmpty && favorites.isNotEmpty) {
-    artists = favorites.map((t) => t.artist.trim()).where((a) {
-      return a.isNotEmpty && a != 'Unknown';
-    }).toSet().take(3).toList();
-  }
-
+  final artists = _topArtists(stats, favorites, count: 3);
   if (artists.isEmpty) {
     return _filterRecommendations(await repo.trending(), recentIds);
   }
@@ -99,6 +84,74 @@ final fromYourChannelsProvider = FutureProvider<List<Track>>((ref) async {
   return ref
       .read(youtubeAccountApiProvider)
       .fetchSubscriptionFeed(token, limit: 20);
+});
+
+/// Most played artists, or liked-song artists for a listener without stats.
+List<String> _topArtists(List<PlayStat> stats, List<Track> favorites,
+    {required int count}) {
+  final artistCounts = <String, int>{};
+  for (final row in stats) {
+    final artist = row.track.artist.trim();
+    if (artist.isEmpty || artist == 'Unknown') continue;
+    artistCounts[artist] = (artistCounts[artist] ?? 0) + row.count;
+  }
+  final ranked = artistCounts.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  final artists = ranked.take(count).map((e) => e.key).toList();
+  if (artists.isNotEmpty) return artists;
+  return favorites
+      .map((t) => t.artist.trim())
+      .where((a) => a.isNotEmpty && a != 'Unknown')
+      .toSet()
+      .take(count)
+      .toList();
+}
+
+const _globalPlaylistQueries = [
+  'top global hits playlist',
+  'viral hits playlist',
+  'best pop songs playlist',
+];
+
+/// YouTube playlists around the listener's top artists (global hits for a
+/// fresh install). Same read-not-watch rule as [forYouProvider].
+final playlistsForYouProvider = FutureProvider<List<Track>>((ref) async {
+  ref.watch(syncRevisionProvider);
+  final repo = ref.watch(musicRepositoryProvider);
+  final artists = _topArtists(
+    ref.read(listeningStatsProvider),
+    ref.read(favoritesProvider),
+    count: 4,
+  );
+  final queries = artists.isEmpty
+      ? _globalPlaylistQueries
+      : [for (final a in artists) '$a playlist'];
+  final openedUrls = ref
+      .read(localStoreProvider)
+      .recentPlaylists()
+      .map((p) => p.browseUrl)
+      .whereType<String>()
+      .toSet();
+
+  final results = await Future.wait(queries.map((q) => repo
+      .searchPlaylists(q, limit: 6)
+      .catchError((Object _) => const <Track>[])));
+
+  // Round-robin so one artist does not fill the whole row.
+  final out = <Track>[];
+  final seen = <String>{};
+  final longest =
+      results.fold<int>(0, (m, list) => list.length > m ? list.length : m);
+  for (var i = 0; i < longest && out.length < 12; i++) {
+    for (final list in results) {
+      if (i >= list.length || out.length >= 12) continue;
+      final p = list[i];
+      if (p.kind != TrackKind.playlist) continue;
+      if (openedUrls.contains(p.browseUrl)) continue;
+      if (seen.add(p.id)) out.add(p);
+    }
+  }
+  return out;
 });
 
 List<Track> _filterRecommendations(List<Track> tracks, Set<String> excludeIds,

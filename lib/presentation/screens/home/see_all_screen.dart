@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
 import '../../widgets/track_tile.dart';
+import '../search/playlist_browse_screen.dart';
 
 /// Full vertical list behind a carousel's "See all".
 class SeeAllScreen extends ConsumerWidget {
@@ -28,9 +29,13 @@ class SeeAllScreen extends ConsumerWidget {
         itemBuilder: (_, i) => TrackTile(
           track: tracks[i],
           active: playingId == tracks[i].id,
-          onTap: () => ref
-              .read(playerControllerProvider.notifier)
-              .playQueue(tracks, startAt: i),
+          onTap: () => tracks[i].isCollection
+              ? Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PlaylistBrowseScreen(seed: tracks[i]),
+                ))
+              : ref
+                  .read(playerControllerProvider.notifier)
+                  .playQueue(tracks, startAt: i),
         ),
       ),
     );
