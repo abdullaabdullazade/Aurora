@@ -21,11 +21,14 @@ import os
 import re
 import json
 import difflib
+import glob
+import logging
 import socket
 import sqlite3
 import threading
 import time
 import unicodedata
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any
 from urllib.parse import quote_plus, urlsplit
@@ -38,6 +41,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Aurora Resolver")
+# uvicorn configures its own loggers at INFO; a fresh one would stay silent.
+logger = logging.getLogger("uvicorn.error")
 
 
 @app.middleware("http")
@@ -705,6 +710,10 @@ def _entry(e: dict[str, Any], *, kind: str = "track") -> dict[str, Any]:
         "channelUrl": e.get("channel_url") or e.get("uploader_url"),
         "kind": kind,
         "url": url,
+        "live": bool(
+            e.get("is_live")
+            or e.get("live_status") in ("is_live", "is_upcoming")
+        ),
     }
 
 
@@ -1186,6 +1195,7 @@ def _ensure_local(video_id: str) -> str:
         # for ~minutes when bgutil's get_pot stalls. yt-dlp's default client set
         # picks a non-PO client and pulls the bytes in ~1s (proven manually).
         last_err: Exception | None = None
+        started = time.monotonic()
         # Many fast attempts with a short timeout beat few slow ones: a good
         # residential proxy pulls the bytes in ~2-4s, a dead one is abandoned in
         # ~8s and we hop to the next exit node — so first-byte stays under the
@@ -1216,6 +1226,11 @@ def _ensure_local(video_id: str) -> str:
                     }
                 },
                 "outtmpl": os.path.join(download_dir, f"{video_id}.%(ext)s"),
+                # The .part file is streamed to the first listener while it
+                # grows, so the finished file must be that same inode: an
+                # ffmpeg remux would swap it and break the in-flight stream.
+                # ExoPlayer plays YouTube's fragmented m4a as is.
+                "fixup": "never",
                 "skip_download": False,
                 "overwrites": True,
                 "retries": 1,
@@ -1242,9 +1257,18 @@ def _ensure_local(video_id: str) -> str:
                         _record_good(proxy)
                     _cache_put(video_id, got)
                     _enforce_cache_limit(video_id)
+                    logger.info(
+                        "download %s ok attempt=%d %.1fs %d bytes",
+                        video_id, attempt + 1, time.monotonic() - started,
+                        os.path.getsize(got),
+                    )
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
+                logger.info(
+                    "download %s attempt=%d failed after %.1fs: %s",
+                    video_id, attempt + 1, time.monotonic() - started, e,
+                )
                 if proxy:
                     _mark_bad(proxy)
             finally:
@@ -1285,17 +1309,174 @@ def _parse_range(rng: str, size: int) -> tuple[int, int]:
     return start, min(end, size - 1)
 
 
+_bg_downloads: dict[str, Future] = {}
+_bg_downloads_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="aurora-dl")
+# How long a cold request waits for yt-dlp to write its first bytes.
+_PROGRESSIVE_START_TIMEOUT = 60.0
+# A growing file that stops growing this long is treated as a dead download.
+_PROGRESSIVE_STALL_TIMEOUT = 60.0
+_PROGRESSIVE_POLL = 0.1
+_CHUNK = 64 * 1024
+
+
+def _start_background_download(video_id: str) -> Future:
+    """One _ensure_local per video per process, shared by every listener."""
+    with _bg_downloads_lock:
+        future = _bg_downloads.get(video_id)
+        if future is None or future.done():
+            future = _bg_executor.submit(_ensure_local, video_id)
+            _bg_downloads[video_id] = future
+
+            def forget(done: Future, video_id: str = video_id) -> None:
+                with _bg_downloads_lock:
+                    if _bg_downloads.get(video_id) is done:
+                        del _bg_downloads[video_id]
+
+            future.add_done_callback(forget)
+        return future
+
+
+def _partial_download(video_id: str) -> str | None:
+    """The .part file yt-dlp is writing for this video, in any worker."""
+    pattern = os.path.join(
+        glob.escape(_CACHE_DIR), f".{video_id}-*", f"{video_id}.*.part"
+    )
+    best: tuple[int, str] | None = None
+    for candidate in glob.glob(pattern):
+        try:
+            size = os.path.getsize(candidate)
+        except OSError:
+            continue
+        if size > 0 and (best is None or size > best[0]):
+            best = (size, candidate)
+    return best[1] if best else None
+
+
+def _is_progressive_range(rng: str | None) -> bool:
+    return not rng or bool(re.fullmatch(r"bytes=0-\d*", rng.strip()))
+
+
+def _wait_for_source(video_id: str, future: Future) -> tuple[str, str]:
+    """Block until the track is cached ("file") or has started ("part")."""
+    final_path = os.path.join(_CACHE_DIR, f"{video_id}.mp4")
+    deadline = time.monotonic() + _PROGRESSIVE_START_TIMEOUT
+    while True:
+        if future.done():
+            return "file", future.result()
+        if os.path.isfile(final_path):
+            cached = _cache_get(video_id)
+            if cached:
+                return "file", cached
+        part = _partial_download(video_id)
+        if part:
+            return "part", part
+        if time.monotonic() > deadline:
+            raise HTTPException(504, "download did not start in time")
+        time.sleep(_PROGRESSIVE_POLL)
+
+
+def _tail_growing_file(fh, part_path: str, limit: int | None):
+    """Yield bytes of a file yt-dlp is still writing until it is complete.
+
+    yt-dlp renames the finished .part into place (same inode, still linked);
+    a failed attempt deletes its temp dir (inode unlinked). Ending the body
+    early on failure would look like a short song, so that raises instead and
+    the client sees a broken connection it can retry.
+    """
+    remaining = limit
+    idle_since = time.monotonic()
+    try:
+        while remaining is None or remaining > 0:
+            want = _CHUNK if remaining is None else min(_CHUNK, remaining)
+            chunk = fh.read(want)
+            if chunk:
+                if remaining is not None:
+                    remaining -= len(chunk)
+                idle_since = time.monotonic()
+                yield chunk
+                continue
+            if not os.path.exists(part_path):
+                if os.fstat(fh.fileno()).st_nlink == 0:
+                    raise RuntimeError("download attempt failed mid-stream")
+                tail = fh.read(want)
+                if not tail:
+                    return
+                if remaining is not None:
+                    remaining -= len(tail)
+                yield tail
+                continue
+            if time.monotonic() - idle_since > _PROGRESSIVE_STALL_TIMEOUT:
+                raise RuntimeError("download stalled mid-stream")
+            time.sleep(_PROGRESSIVE_POLL)
+    finally:
+        fh.close()
+
+
+def _progressive_response(
+    part_path: str, rng: str | None
+) -> StreamingResponse | None:
+    """Stream a download in progress; None if it finished meanwhile."""
+    try:
+        fh = open(part_path, "rb")
+    except FileNotFoundError:
+        return None
+    headers = {"accept-ranges": "bytes", "content-type": "audio/mp4"}
+    end = None
+    if rng:
+        m = re.fullmatch(r"bytes=0-(\d*)", rng.strip())
+        if m and m.group(1):
+            end = int(m.group(1))
+    if end is None:
+        # Total length is unknown until yt-dlp finishes: plain chunked 200.
+        return StreamingResponse(
+            _tail_growing_file(fh, part_path, None), headers=headers
+        )
+    length = end + 1
+    deadline = time.monotonic() + _PROGRESSIVE_STALL_TIMEOUT
+    while os.fstat(fh.fileno()).st_size < length and os.path.exists(part_path):
+        if time.monotonic() > deadline:
+            fh.close()
+            raise HTTPException(504, "download stalled")
+        time.sleep(_PROGRESSIVE_POLL)
+    if os.fstat(fh.fileno()).st_size < length:
+        fh.close()
+        return None
+    headers["content-range"] = f"bytes 0-{end}/*"
+    headers["content-length"] = str(length)
+    return StreamingResponse(
+        _tail_growing_file(fh, part_path, length),
+        status_code=206,
+        headers=headers,
+    )
+
+
 @app.get("/stream")
 def stream(v: str, request: Request) -> StreamingResponse:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,64}", v):
+        raise HTTPException(400, "invalid YouTube video ID")
+    rng = request.headers.get("range")
     try:
-        path = _ensure_local(v)
+        path = _cache_get(v)
+        if path is None and _is_progressive_range(rng):
+            # Cold track: start playback from the bytes yt-dlp has so far
+            # instead of making the player wait for the whole file.
+            kind, source = _wait_for_source(v, _start_background_download(v))
+            if kind == "part":
+                response = _progressive_response(source, rng)
+                if response is not None:
+                    return response
+                path = _ensure_local(v)
+            else:
+                path = source
+        elif path is None:
+            path = _ensure_local(v)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"resolve failed: {e}") from e
 
     size = os.path.getsize(path)
-    rng = request.headers.get("range")
     start, end = _parse_range(rng, size) if rng else (0, size - 1)
     length = end - start + 1
 
