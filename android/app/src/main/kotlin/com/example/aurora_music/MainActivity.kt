@@ -159,7 +159,8 @@ class MainActivity : AudioServiceActivity() {
                 hasSpeaker = true
             }
             val name = deviceLabel(d, kind)
-            seenLabels.add(name.lowercase())
+            // One headset shows up as both A2DP and SCO outputs; list it once.
+            if (!seenLabels.add(name.lowercase())) continue
             out.add(
                 hashMapOf(
                     "id" to d.id.toString(),
@@ -389,7 +390,8 @@ class MainActivity : AudioServiceActivity() {
                 } catch (_: Exception) {
                     ""
                 }
-                n == want || n.contains(want) || want.contains(n)
+                // An unnamed bond would otherwise match everything ("".contains).
+                n.isNotEmpty() && (n == want || n.contains(want) || want.contains(n))
             }?.address
         } catch (_: Exception) {
             null

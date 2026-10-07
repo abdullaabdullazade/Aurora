@@ -61,10 +61,13 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
         await _drag.animateTo(_width,
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOutCubic);
-        await controller.close();
-        if (!mounted) return;
-        _drag.value = 0;
-        _dismissing = false;
+        try {
+          await controller.close();
+        } finally {
+          // Reset even if close threw, or the card stays undraggable.
+          if (mounted) _drag.value = 0;
+          _dismissing = false;
+        }
         return;
       }
       if (_drag.value > 0) {

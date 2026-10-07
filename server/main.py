@@ -758,6 +758,9 @@ def search(
     query = (q or "").strip()
     if not query:
         return []
+    # Results are capped at 50 anyway; an uncapped ytsearchN lets one request
+    # make yt-dlp walk thousands of hits.
+    limit = max(1, min(limit, 50))
 
     try:
         if f == "tracks":

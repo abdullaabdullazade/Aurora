@@ -58,6 +58,9 @@ class ApiMusicRepository implements MusicRepository {
     });
     final list = (res.data as List).cast<Map<String, dynamic>>();
     return list
+        // Live streams never finish downloading on the resolver and would
+        // spin forever when tapped, so they are dropped from every list.
+        .where((j) => j['live'] != true)
         .where((j) => !playableOnly || _isPlayable(j))
         .map(_fromJson)
         .toList(growable: false);

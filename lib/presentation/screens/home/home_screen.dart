@@ -33,7 +33,21 @@ List<RecentPlaylist> _quickAccessPlaylists({
     out.add(item);
   }
 
+  final byId = {for (final p in library) p.id: p};
   for (final r in recent) {
+    final libraryId = r.libraryId;
+    if (r.source == RecentPlaylistSource.library && libraryId != null) {
+      // Deleted playlists drop out; renamed ones show their current name.
+      final current = byId[libraryId];
+      if (current == null) continue;
+      add(RecentPlaylist.library(
+        libraryId: current.id,
+        title: current.name,
+        artworkUrl: current.coverUrl ?? '',
+        tracks: current.tracks,
+      ));
+      continue;
+    }
     add(r);
   }
   for (final p in library) {

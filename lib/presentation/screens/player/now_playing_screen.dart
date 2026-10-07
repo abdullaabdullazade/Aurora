@@ -417,9 +417,7 @@ class _OutputSheetState extends ConsumerState<_OutputSheet> {
     if (_busy) return;
     final id = d.id;
     if (id == null || id.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not connect')),
-      );
+      _closeWithFallback();
       return;
     }
     setState(() => _busy = true);
@@ -443,9 +441,16 @@ class _OutputSheetState extends ConsumerState<_OutputSheet> {
     }
     setState(() => _busy = false);
     ref.invalidate(audioOutputsProvider);
-    // Android 13+ reserves A2DP connect/disconnect for system apps, so the
-    // in-app switch often fails there; hand the user the system screen.
-    ScaffoldMessenger.of(context).showSnackBar(
+    _closeWithFallback();
+  }
+
+  /// Android 13+ reserves A2DP connect/disconnect for system apps, so the
+  /// in-app switch often fails there; hand the user the system screen. The
+  /// sheet is closed first: a SnackBar would render underneath it.
+  void _closeWithFallback() {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Could not switch output from the app'),
         action: SnackBarAction(
