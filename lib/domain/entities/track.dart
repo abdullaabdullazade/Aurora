@@ -1,5 +1,8 @@
 import 'package:flutter/painting.dart';
 
+/// What a search / library row represents.
+enum TrackKind { track, playlist, album, podcast }
+
 /// Immutable core entity. The Domain layer knows nothing about JSON internals
 /// beyond simple (de)serialization for local persistence.
 class Track {
@@ -24,6 +27,12 @@ class Track {
   /// Uploader/channel page on YouTube (when known from the resolver).
   final String? channelUrl;
 
+  /// Search hit type — playlists/albums/podcasts open a browse screen.
+  final TrackKind kind;
+
+  /// YouTube URL to expand (playlist page). Null for ordinary tracks.
+  final String? browseUrl;
+
   const Track({
     required this.id,
     required this.title,
@@ -35,11 +44,21 @@ class Track {
     this.paletteReady = false,
     this.localPath,
     this.channelUrl,
+    this.kind = TrackKind.track,
+    this.browseUrl,
   });
 
   bool get isDownloaded => localPath != null;
 
-  Track copyWith({String? localPath, Color? accent, bool? paletteReady}) =>
+  bool get isCollection => kind != TrackKind.track;
+
+  Track copyWith({
+    String? localPath,
+    Color? accent,
+    bool? paletteReady,
+    TrackKind? kind,
+    String? browseUrl,
+  }) =>
       Track(
         id: id,
         title: title,
@@ -51,6 +70,8 @@ class Track {
         paletteReady: paletteReady ?? this.paletteReady,
         localPath: localPath ?? this.localPath,
         channelUrl: channelUrl,
+        kind: kind ?? this.kind,
+        browseUrl: browseUrl ?? this.browseUrl,
       );
 
   Map<String, dynamic> toJson() => {
@@ -63,7 +84,19 @@ class Track {
         'accent': accent.value,
         'localPath': localPath,
         'channelUrl': channelUrl,
+        'kind': kind.name,
+        'browseUrl': browseUrl,
       };
+
+  static TrackKind kindFrom(Object? raw) {
+    final s = (raw as String?)?.toLowerCase();
+    return switch (s) {
+      'playlist' => TrackKind.playlist,
+      'album' => TrackKind.album,
+      'podcast' => TrackKind.podcast,
+      _ => TrackKind.track,
+    };
+  }
 
   factory Track.fromJson(Map<dynamic, dynamic> j) => Track(
         id: j['id'] as String,
@@ -75,6 +108,8 @@ class Track {
         accent: Color((j['accent'] as num?)?.toInt() ?? 0xFF1DB954),
         localPath: j['localPath'] as String?,
         channelUrl: j['channelUrl'] as String?,
+        kind: kindFrom(j['kind']),
+        browseUrl: j['browseUrl'] as String?,
       );
 
   /// Deterministic vibrant accent derived from the id — gives every YouTube

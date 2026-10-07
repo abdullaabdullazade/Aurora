@@ -14,3 +14,16 @@ final connectivityProvider = StreamProvider<bool>((ref) async* {
 final isOnlineProvider = Provider<bool>(
   (ref) => ref.watch(connectivityProvider).valueOrNull ?? true,
 );
+
+/// Emits true when Wi-Fi is among the active transports.
+final wifiConnectivityProvider = StreamProvider<bool>((ref) async* {
+  final c = Connectivity();
+  bool wifi(List<ConnectivityResult> r) => r.contains(ConnectivityResult.wifi);
+  yield wifi(await c.checkConnectivity());
+  yield* c.onConnectivityChanged.map(wifi);
+});
+
+/// Defaults to true until the first reading (allows downloads before probe).
+final isWifiProvider = Provider<bool>(
+  (ref) => ref.watch(wifiConnectivityProvider).valueOrNull ?? true,
+);

@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
 import '../../state/providers.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/skeletons.dart';
 import '../../widgets/track_tile.dart';
 import '../library/add_to_playlist_sheet.dart';
+import 'playlist_browse_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -20,8 +22,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
   Timer? _debounce;
-  int _filter = 0;
-  static const _filters = ['Tracks', 'Playlists', 'Albums'];
+
+  static const _filters = [
+    ('Tracks', 'tracks'),
+    ('Playlists', 'playlists'),
+    ('Albums', 'albums'),
+    ('Podcasts', 'podcasts'),
+  ];
 
   /// Raw field text. The provider holds the *debounced* query, so this is what
   /// autocomplete has to follow — otherwise suggestions lag a keystroke behind.
@@ -55,6 +62,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     ref.invalidate(searchHistoryProvider);
   }
 
+  void _openResult(Track track, List<Track> tracks, int index) {
+    if (track.isCollection) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PlaylistBrowseScreen(seed: track),
+      ));
+      return;
+    }
+    ref.read(playerControllerProvider.notifier).playQueue(tracks, startAt: index);
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -67,6 +84,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final results = ref.watch(searchResultsProvider);
     final query = ref.watch(searchQueryProvider);
+    final filter = ref.watch(searchFilterProvider);
     final text = Theme.of(context).textTheme;
 
     return SafeArea(
@@ -98,7 +116,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   border: InputBorder.none,
                   isCollapsed: true,
                   contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                  hintText: 'Songs, artists, videos…',
+                  hintText: 'Songs, playlists, albums, podcasts…',
                   hintStyle: text.bodyLarge
                       ?.copyWith(color: AppColors.textTertiary),
                   icon: const Icon(Icons.search_rounded,
@@ -125,11 +143,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.symmetric(horizontal: Sp.lg),
               itemCount: _filters.length,
               separatorBuilder: (_, __) => const SizedBox(width: Sp.sm),
-              itemBuilder: (_, i) => _FilterChip(
-                label: _filters[i],
-                selected: i == _filter,
-                onTap: () => setState(() => _filter = i),
-              ),
+              itemBuilder: (_, i) {
+                final (label, key) = _filters[i];
+                return _FilterChip(
+                  label: label,
+                  selected: filter == key,
+                  onTap: () =>
+                      ref.read(searchFilterProvider.notifier).state = key,
+                );
+              },
             ),
           ),
           const SizedBox(height: Sp.sm),
@@ -166,19 +188,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             padding: const EdgeInsets.fromLTRB(
                                 Sp.sm, 0, Sp.sm, 180),
                             itemCount: tracks.length,
-                            itemBuilder: (_, i) => TrackTile(
-                              track: tracks[i],
-                              onTap: () => ref
-                                  .read(playerControllerProvider.notifier)
-                                  .playQueue(tracks, startAt: i),
-                              trailing: IconButton(
-                                icon: const Icon(
-                                    Icons.add_circle_outline_rounded,
-                                    color: AppColors.textSecondary),
-                                onPressed: () => AddToPlaylistSheet.show(
-                                    context, tracks[i]),
-                              ),
-                            ),
+                            itemBuilder: (_, i) {
+                              final t = tracks[i];
+                              return TrackTile(
+                                track: t,
+                                onTap: () => _openResult(t, tracks, i),
+                                trailing: t.isCollection
+                                    ? Icon(
+                                        t.kind == TrackKind.podcast
+                                            ? Icons.podcasts_rounded
+                                            : Icons.queue_music_rounded,
+                                        color: AppColors.textSecondary,
+                                      )
+                                    : IconButton(
+                                        icon: const Icon(
+                                            Icons.add_circle_outline_rounded,
+                                            color: AppColors.textSecondary),
+                                        onPressed: () =>
+                                            AddToPlaylistSheet.show(
+                                                context, t),
+                                      ),
+                              );
+                            },
                           ),
                   ),
           ),

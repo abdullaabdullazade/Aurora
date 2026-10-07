@@ -14,12 +14,12 @@ import '../../widgets/waveform_seeker.dart';
 import '../../state/player_controller.dart';
 import '../../state/favorites_controller.dart';
 import '../../state/output_controller.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../artist/artist_detail_screen.dart';
 import '../library/add_to_playlist_sheet.dart';
 import '../library/track_context_sheet.dart';
 import 'queue_sheet.dart';
 import 'lyrics_sheet.dart';
-import 'sleep_timer_sheet.dart';
 
 class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
@@ -66,6 +66,11 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
+          _SwipeDownDismiss(
+            onDismiss: () => Navigator.of(context).maybePop(),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
           // Layered blurred-artwork background + dark gradient veil.
           // The blur is held at low opacity on purpose: it is texture, not a
           // background. At full strength a bright cover pushes the composite
@@ -175,8 +180,81 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
               ),
             ),
           ),
+              ],
+            ),
+          ),
           const _VolumeDragLayer(),
         ],
+      ),
+    );
+  }
+}
+
+/// Drag down to close — same as the top-bar chevron (`Navigator.maybePop`).
+class _SwipeDownDismiss extends StatefulWidget {
+  const _SwipeDownDismiss({required this.child, required this.onDismiss});
+
+  final Widget child;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_SwipeDownDismiss> createState() => _SwipeDownDismissState();
+}
+
+class _SwipeDownDismissState extends State<_SwipeDownDismiss>
+    with SingleTickerProviderStateMixin {
+  static const _dismissDistance = 120.0;
+  static const _dismissVelocity = 400.0;
+
+  double _offset = 0;
+  late final AnimationController _snap =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+  Animation<double>? _snapAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _snap.addListener(() {
+      final anim = _snapAnimation;
+      if (anim != null) setState(() => _offset = anim.value);
+    });
+  }
+
+  @override
+  void dispose() {
+    _snap.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    _snap.stop();
+    _snapAnimation = null;
+    setState(() {
+      _offset = (_offset + details.primaryDelta!).clamp(0.0, double.infinity);
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (_offset > _dismissDistance || velocity > _dismissVelocity) {
+      HapticFeedback.lightImpact();
+      widget.onDismiss();
+      return;
+    }
+    _snapAnimation = Tween<double>(begin: _offset, end: 0).animate(
+      CurvedAnimation(parent: _snap, curve: Curves.easeOut),
+    );
+    _snap.forward(from: 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onVerticalDragUpdate: _onDragUpdate,
+      onVerticalDragEnd: _onDragEnd,
+      child: Transform.translate(
+        offset: Offset(0, _offset),
+        child: widget.child,
       ),
     );
   }
@@ -273,60 +351,12 @@ class _SpeedChip extends ConsumerWidget {
 class _OutputChip extends ConsumerWidget {
   const _OutputChip();
 
-  void _sheet(BuildContext context, OutputDevice d) {
+  void _sheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Glass(
-        radius: const BorderRadius.vertical(top: Radii.xl),
-        blur: 30,
-        opacity: 0.16,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: Sp.md),
-              Container(
-                  width: 44,
-                  height: 4,
-                  decoration: const BoxDecoration(
-                      color: AppColors.glassStroke,
-                      borderRadius: Radii.rPill)),
-              Padding(
-                padding: const EdgeInsets.all(Sp.lg),
-                child: Text('Audio output',
-                    style: Theme.of(context).textTheme.titleLarge),
-              ),
-              ListTile(
-                leading: Icon(_iconFor(d.kind),
-                    color: AppColors.accentBright),
-                title: Text('Playing on ${d.label}'),
-                trailing:
-                    const Icon(Icons.check_rounded, color: AppColors.accentBright),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.sm, Sp.lg, Sp.lg),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: Sp.md)),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      openOutputPicker();
-                    },
-                    icon: const Icon(Icons.swap_horiz_rounded),
-                    label: const Text('Switch output (speaker / Bluetooth)'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      isScrollControlled: true,
+      builder: (_) => const _OutputSheet(),
     );
   }
 
@@ -341,7 +371,7 @@ class _OutputChip extends ConsumerWidget {
     final d = ref.watch(outputDeviceProvider).valueOrNull ??
         const OutputDevice(OutputKind.speaker, 'Device Speakers');
     return GestureDetector(
-      onTap: () => _sheet(context, d),
+      onTap: () => _sheet(context),
       child: Glass(
         radius: Radii.rPill,
         blur: 18,
@@ -362,63 +392,408 @@ class _OutputChip extends ConsumerWidget {
   }
 }
 
-class _SongInfo extends StatelessWidget {
-  final Track track;
-  const _SongInfo({required this.track});
+class _OutputSheet extends ConsumerStatefulWidget {
+  const _OutputSheet();
+
+  @override
+  ConsumerState<_OutputSheet> createState() => _OutputSheetState();
+}
+
+class _OutputSheetState extends ConsumerState<_OutputSheet> {
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await Permission.bluetoothConnect.request();
+      } catch (_) {}
+      if (mounted) ref.invalidate(audioOutputsProvider);
+    });
+  }
+
+  Future<void> _select(OutputDevice d) async {
+    if (_busy) return;
+    final id = d.id;
+    if (id == null || id.isEmpty) {
+      _closeWithFallback();
+      return;
+    }
+    setState(() => _busy = true);
+    final ok = await selectAudioOutput(id);
+    if (!mounted) return;
+    if (ok) {
+      // Let system A2DP settle, then refresh chip from getDevices.
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      try {
+        await ref
+            .read(playerControllerProvider.notifier)
+            .republishNowPlayingMetadata();
+      } catch (_) {}
+      if (!mounted) return;
+      ref.invalidate(audioOutputsProvider);
+      ref.invalidate(outputDeviceProvider);
+      setState(() => _busy = false);
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _busy = false);
+    ref.invalidate(audioOutputsProvider);
+    _closeWithFallback();
+  }
+
+  /// Android 13+ reserves A2DP connect/disconnect for system apps, so the
+  /// in-app switch often fails there; hand the user the system screen. The
+  /// sheet is closed first: a SnackBar would render underneath it.
+  void _closeWithFallback() {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Could not switch output from the app'),
+        action: SnackBarAction(
+          label: 'Bluetooth settings',
+          onPressed: openOutputPicker,
+        ),
+      ),
+    );
+  }
+
+  IconData _iconFor(OutputKind k) => switch (k) {
+        OutputKind.bluetooth => Icons.bluetooth_audio_rounded,
+        OutputKind.headphones => Icons.headphones_rounded,
+        OutputKind.speaker => Icons.smartphone_rounded,
+      };
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
+    final outputs = ref.watch(audioOutputsProvider);
+
+    return Glass(
+      radius: const BorderRadius.vertical(top: Radii.xl),
+      blur: 30,
+      opacity: 0.16,
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.55,
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                track.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w600,
-                  height: 1.12,
-                  letterSpacing: -0.4,
-                  color: AppColors.textPrimary,
+              const SizedBox(height: Sp.md),
+              Container(
+                width: 44,
+                height: 4,
+                decoration: const BoxDecoration(
+                  color: AppColors.glassStroke,
+                  borderRadius: Radii.rPill,
                 ),
               ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => ArtistDetailScreen(
-                      artist: track.artist,
-                      accent: track.accent,
-                      channelUrl: track.channelUrl),
-                )),
-                child: Text(
-                  track.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, Sp.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Audio output',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    if (_busy || outputs.isLoading)
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      IconButton(
+                        tooltip: 'Refresh',
+                        onPressed: () =>
+                            ref.invalidate(audioOutputsProvider),
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: outputs.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(Sp.lg),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
+                  error: (_, __) => Padding(
+                    padding: const EdgeInsets.all(Sp.lg),
+                    child: Text(
+                      'Could not list devices',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
+                  ),
+                  data: (list) {
+                    if (list.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(Sp.lg),
+                        child: Text(
+                          'No outputs found',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: list.length,
+                      itemBuilder: (context, i) {
+                        final d = list[i];
+                        return ListTile(
+                          leading: Icon(
+                            _iconFor(d.kind),
+                            color: AppColors.accentBright,
+                          ),
+                          title: Text(d.label),
+                          subtitle: Text(switch (d.kind) {
+                            OutputKind.speaker => 'This phone',
+                            OutputKind.headphones => 'Wired / USB',
+                            OutputKind.bluetooth => 'Bluetooth',
+                          }),
+                          trailing: d.isActive
+                              ? const Icon(Icons.check_rounded,
+                                  color: AppColors.accentBright)
+                              : null,
+                          onTap: () => _select(d),
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                '${Fmt.compact(track.plays)} plays',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textTertiary,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.sm, Sp.lg, Sp.lg),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      openOutputPicker();
+                    },
+                    icon: const Icon(Icons.tune_rounded),
+                    label: const Text('More (system)'),
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(width: Sp.md),
-        FavButton(track: track, size: 30),
+      ),
+    );
+  }
+}
+
+class _SongInfo extends StatelessWidget {
+  final Track track;
+  const _SongInfo({required this.track});
+
+  static const _titleStyle = TextStyle(
+    fontSize: 30,
+    fontWeight: FontWeight.w600,
+    height: 1.12,
+    letterSpacing: -0.4,
+    color: AppColors.textPrimary,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _MarqueeTitle(
+                text: track.title,
+                style: _titleStyle,
+              ),
+            ),
+            const SizedBox(width: Sp.md),
+            FavButton(track: track, size: 30),
+          ],
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ArtistDetailScreen(
+                artist: track.artist,
+                accent: track.accent,
+                channelUrl: track.channelUrl),
+          )),
+          child: Text(
+            track.artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '${Fmt.compact(track.plays)} plays',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textTertiary,
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Spotify-style title: continuous loop scroll when text overflows.
+class _MarqueeTitle extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _MarqueeTitle({required this.text, required this.style});
+
+  @override
+  State<_MarqueeTitle> createState() => _MarqueeTitleState();
+}
+
+class _MarqueeTitleState extends State<_MarqueeTitle>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  double _textWidth = 0;
+  double _viewport = 0;
+
+  static const _startPause = Duration(milliseconds: 1500);
+  static const _gap = 48.0;
+  static const _pxPerSec = 40.0;
+
+  bool get _needsScroll => _textWidth > _viewport && _viewport > 0;
+
+  double get _cycle => _textWidth + _gap;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MarqueeTitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text || oldWidget.style != widget.style) {
+      _ctrl.stop();
+      _ctrl.value = 0;
+      setState(() {
+        _textWidth = 0;
+        _viewport = 0;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startLoop() async {
+    if (!mounted || !_needsScroll) return;
+    await Future.delayed(_startPause);
+    if (!mounted || !_needsScroll) return;
+    final ms = (_cycle / _pxPerSec * 1000).clamp(2000, 20000).round();
+    _ctrl.duration = Duration(milliseconds: ms);
+    _ctrl.repeat();
+  }
+
+  void _measure(double maxWidth) {
+    if (maxWidth <= 0) return;
+    final painter = TextPainter(
+      text: TextSpan(text: widget.text, style: widget.style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final tw = painter.width;
+    if ((tw - _textWidth).abs() < 0.5 && (maxWidth - _viewport).abs() < 0.5) {
+      return;
+    }
+    final wasScrolling = _needsScroll;
+    setState(() {
+      _textWidth = tw;
+      _viewport = maxWidth;
+    });
+    if (!_needsScroll) {
+      _ctrl.stop();
+      _ctrl.value = 0;
+    } else if (!wasScrolling || !_ctrl.isAnimating) {
+      _ctrl.value = 0;
+      _startLoop();
+    } else {
+      // Keep looping; refresh duration if cycle length changed.
+      final ms = (_cycle / _pxPerSec * 1000).clamp(2000, 20000).round();
+      _ctrl.duration = Duration(milliseconds: ms);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _measure(constraints.maxWidth);
+        });
+
+        Widget label() => Text(
+              widget.text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style: widget.style,
+            );
+
+        if (!_needsScroll) {
+          return label();
+        }
+
+        return ClipRect(
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (rect) => const LinearGradient(
+              colors: [
+                Colors.white,
+                Colors.white,
+                Colors.transparent,
+              ],
+              stops: [0.0, 0.88, 1.0],
+            ).createShader(rect),
+            child: AnimatedBuilder(
+              animation: _ctrl,
+              builder: (_, child) => Transform.translate(
+                offset: Offset(-_cycle * _ctrl.value, 0),
+                child: child,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  label(),
+                  const SizedBox(width: _gap),
+                  label(),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -429,14 +804,9 @@ class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final sleeping = ref.watch(playerControllerProvider
-        .select((s) => s.sleepRemaining != null || s.sleepAtTrackEnd));
     return Row(
       children: [
-        _RoundIcon(
-          icon: Icons.keyboard_arrow_down_rounded,
-          onTap: () => Navigator.of(context).maybePop(),
-        ),
+        const SizedBox(width: 42),
         Expanded(
           child: Column(
             children: [
@@ -451,53 +821,20 @@ class _TopBar extends ConsumerWidget {
             ],
           ),
         ),
-        _RoundIcon(
-          icon: sleeping ? Icons.bedtime_rounded : Icons.bedtime_outlined,
-          highlight: sleeping,
-          onTap: () => SleepTimerSheet.show(context),
-        ),
-        const SizedBox(width: Sp.sm),
-        _RoundIcon(
-          icon: Icons.more_horiz_rounded,
+        GestureDetector(
           onTap: () {
             final t = ref.read(playerControllerProvider).current;
-            if (t != null) TrackContextSheet.show(context, t);
+            if (t != null) {
+              TrackContextSheet.show(context, t, showSleepTimer: true);
+            }
           },
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Icon(Icons.more_horiz_rounded,
+                size: 22, color: AppColors.textPrimary),
+          ),
         ),
       ],
-    );
-  }
-}
-
-class _RoundIcon extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool highlight;
-  const _RoundIcon(
-      {required this.icon, required this.onTap, this.highlight = false});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: highlight
-              ? AppColors.accentSoft
-              : Colors.white.withValues(alpha: 0.06),
-          border: Border.all(
-              color: highlight
-                  ? AppColors.accentBright
-                  : AppColors.glassStroke),
-        ),
-        child: Icon(icon,
-            size: 22,
-            color: highlight
-                ? AppColors.accentBright
-                : AppColors.textPrimary),
-      ),
     );
   }
 }

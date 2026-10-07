@@ -1,8 +1,28 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../domain/entities/playlist.dart';
+import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
+
+/// Last queue, track index, and scrub position for resume-on-launch.
+@immutable
+class PlaybackSession {
+  const PlaybackSession({
+    required this.queue,
+    required this.index,
+    required this.position,
+    required this.savedAt,
+  });
+
+  final List<Track> queue;
+  final int index;
+  final Duration position;
+  final DateTime savedAt;
+}
 
 /// Thin Hive wrapper. Offline-first index for playlists, recents, downloads.
 /// Stores plain JSON maps so no codegen/adapters are required.
@@ -19,9 +39,13 @@ class LocalStore {
   static const _lyricsBox = 'lyrics';
   static const _statsBox = 'stats';
   static const _recentsKey = 'list';
+  static const _recentPlaylistsKey = 'playlists';
   static const _maxRecents = 30;
+  static const _maxRecentPlaylists = 4;
   static const _searchHistoryKey = 'search_history';
   static const _maxSearchHistory = 12;
+  static const _playbackSessionKey = 'playback_session';
+  static const _playbackSessionMaxAge = Duration(days: 30);
 
   late final Box<dynamic> _playlists;
   late final Box<dynamic> _recents;
@@ -125,6 +149,26 @@ class LocalStore {
     await _recents.put(_recentsKey, trimmed);
   }
 
+  // --- Recent playlists (Home 2×2 quick access) -------------------------
+  List<RecentPlaylist> recentPlaylists() {
+    final raw = (_recents.get(_recentPlaylistsKey) as List?) ?? const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => RecentPlaylist.fromJson(Map<dynamic, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
+  Future<void> pushRecentPlaylist(RecentPlaylist entry) async {
+    final list = recentPlaylists().toList()
+      ..removeWhere((e) => e.id == entry.id);
+    list.insert(0, entry);
+    final trimmed = list
+        .take(_maxRecentPlaylists)
+        .map((e) => e.toJson())
+        .toList(growable: false);
+    await _recents.put(_recentPlaylistsKey, trimmed);
+  }
+
   // --- Search history ----------------------------------------------------
   List<String> searchHistory() =>
       ((_settings.get(_searchHistoryKey) as List?) ?? const [])
@@ -147,6 +191,61 @@ class LocalStore {
   }
 
   Future<void> clearSearchHistory() => _settings.delete(_searchHistoryKey);
+
+  // --- Playback session (device-local, not synced) -----------------------
+  PlaybackSession? playbackSession() {
+    final raw = _settings.get(_playbackSessionKey);
+    if (raw is! Map) return null;
+    final map = Map<dynamic, dynamic>.from(raw);
+    final queueRaw = map['queue'];
+    if (queueRaw is! List || queueRaw.isEmpty) return null;
+    final queue = queueRaw
+        .whereType<Map>()
+        .map(Track.fromJson)
+        .toList(growable: false);
+    if (queue.isEmpty) return null;
+    final index = (map['index'] as num?)?.toInt() ?? 0;
+    if (index < 0 || index >= queue.length) return null;
+    final savedAtSec = (map['savedAt'] as num?)?.toInt();
+    if (savedAtSec == null) return null;
+    final savedAt =
+        DateTime.fromMillisecondsSinceEpoch(savedAtSec * 1000, isUtc: true);
+    if (DateTime.now().toUtc().difference(savedAt) > _playbackSessionMaxAge) {
+      return null;
+    }
+    return PlaybackSession(
+      queue: queue,
+      index: index,
+      position: Duration(milliseconds: (map['positionMs'] as num?)?.toInt() ?? 0),
+      savedAt: savedAt,
+    );
+  }
+
+  Future<void> savePlaybackSession({
+    required List<Track> queue,
+    required int index,
+    required Duration position,
+  }) async {
+    if (queue.isEmpty) return;
+    final safeIndex = index.clamp(0, queue.length - 1);
+    final track = queue[safeIndex];
+    var positionMs = position.inMilliseconds;
+    final totalMs = track.duration.inMilliseconds;
+    if (totalMs > 0 && positionMs > totalMs * 0.95) {
+      positionMs = 0;
+    }
+    await _settings.put(_playbackSessionKey, {
+      'version': 1,
+      // The session never leaves this device, so local paths stay valid.
+      'queue': queue.map((t) => t.toJson()).toList(),
+      'index': safeIndex,
+      'positionMs': positionMs,
+      'savedAt': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    });
+  }
+
+  Future<void> clearPlaybackSession() =>
+      _settings.delete(_playbackSessionKey);
 
   // --- Listening stats ---------------------------------------------------
   /// One row per track: how many times it started and how long it was heard.
@@ -191,6 +290,50 @@ class LocalStore {
 
   Future<void> clearStats() => _stats.clear();
 
+  /// Wipes per-account data when switching users or signing out.
+  /// Device prefs (theme, crossfade, hidden folders) are kept. Downloaded
+  /// audio files are deleted too: once the index is gone nothing references
+  /// them, and the next account restores its own downloads on sign-in.
+  Future<void> clearAccountData() async {
+    // Only files DownloadController wrote; never anything else on the device.
+    String? ownDir;
+    try {
+      ownDir = '${(await getApplicationDocumentsDirectory()).path}/aurora/';
+    } catch (e) {
+      debugPrint('[store] documents dir unavailable: $e');
+    }
+    for (final track in downloads()) {
+      final path = track.localPath;
+      if (ownDir == null || path == null || !path.startsWith(ownDir)) continue;
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (e) {
+        debugPrint('[store] could not delete download $path: $e');
+      }
+    }
+    await Future.wait([
+      clearPlaybackSession(),
+      _playlists.clear(),
+      _favorites.clear(),
+      _recents.clear(),
+      _stats.clear(),
+      _downloads.clear(),
+      _lyrics.clear(),
+      clearSearchHistory(),
+    ]);
+  }
+
+  String? lastAccountUid() => _settings.get('last_account_uid') as String?;
+
+  Future<void> setLastAccountUid(String? uid) async {
+    if (uid == null || uid.isEmpty) {
+      await _settings.delete('last_account_uid');
+    } else {
+      await _settings.put('last_account_uid', uid);
+    }
+  }
+
   // --- Downloads ---------------------------------------------------------
   List<Track> downloads() => _downloads.values
       .map((e) => Track.fromJson(Map<dynamic, dynamic>.from(e as Map)))
@@ -212,7 +355,8 @@ class LocalStore {
             .toList(),
         'settings': {
           for (final entry in _settings.toMap().entries)
-            entry.key.toString(): _jsonValue(entry.value),
+            if (entry.key.toString() != _playbackSessionKey)
+              entry.key.toString(): _jsonValue(entry.value),
         },
       };
 
@@ -271,6 +415,7 @@ class LocalStore {
     if (remoteSettings is Map) {
       for (final entry in remoteSettings.entries) {
         final key = entry.key.toString();
+        if (key == _playbackSessionKey) continue;
         if (!_settings.containsKey(key)) {
           await _settings.put(key, entry.value);
         }

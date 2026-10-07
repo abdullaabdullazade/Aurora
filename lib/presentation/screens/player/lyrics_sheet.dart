@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../widgets/glass.dart';
@@ -29,6 +32,18 @@ class _LyricsSheetState extends ConsumerState<LyricsSheet> {
   // Active line sits ~38% from the top — reads naturally, with upcoming lines
   // visible below.
   static const double _align = 0.38;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(WakelockPlus.enable());
+  }
+
+  @override
+  void dispose() {
+    unawaited(WakelockPlus.disable());
+    super.dispose();
+  }
 
   String _offsetLabel(int millis) {
     final seconds = millis / 1000;

@@ -1,0 +1,12 @@
+.env
+.env.*
+cache/
+data/
+__pycache__/
+.venv/
+venv/
+*.pyc
+.git/
+.last_url
+vercel.env
+cookies.txt

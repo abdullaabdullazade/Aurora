@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/config/app_config.dart';
@@ -11,6 +12,7 @@ import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/root_scaffold.dart';
 import 'presentation/state/providers.dart';
+import 'presentation/state/player_controller.dart';
 import 'presentation/state/settings_controller.dart';
 
 Future<void> main() async {
@@ -28,8 +30,12 @@ Future<void> main() async {
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.aurora.music.channel.audio',
     androidNotificationChannelName: 'Aurora playback',
-    androidNotificationOngoing: true,
-    androidStopForegroundOnPause: true,
+    // Ongoing must stay off: audio_service asserts it requires
+    // androidStopForegroundOnPause, which is disabled below.
+    androidNotificationOngoing: false,
+    // Keep FGS between tracks — remote streams reload in Dart after EOS;
+    // stopping foreground freezes that work until the user opens the app.
+    androidStopForegroundOnPause: false,
   );
 
   final store = LocalStore();
@@ -59,14 +65,45 @@ Future<void> _resolveBackend() async {
   // The app will now use `AppConfig.apiBase` which is populated from the environment (.env or CLI arguments).
 }
 
-class AuroraApp extends ConsumerWidget {
+class AuroraApp extends ConsumerStatefulWidget {
   const AuroraApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AuroraApp> createState() => _AuroraAppState();
+}
+
+class _AuroraAppState extends ConsumerState<AuroraApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(ref.read(playerControllerProvider.notifier).onAppResumed());
+      return;
+    }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(ref.read(playerControllerProvider.notifier).persistSessionNow());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Initialize SyncService
     ref.read(syncServiceProvider);
-    
+
     final mode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'Aurora Music',

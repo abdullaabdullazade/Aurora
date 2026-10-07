@@ -17,7 +17,8 @@ class AlbumDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final query = '${seed.artist} ${seed.title} album';
     final tracks = ref.watch(artistTracksProvider(query));
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -84,7 +85,7 @@ class AlbumDetailScreen extends ConsumerWidget {
               itemCount: list.length,
               itemBuilder: (_, i) => TrackTile(
                 track: list[i],
-                active: playing?.id == list[i].id,
+                active: playingId == list[i].id,
                 onTap: () => ref
                     .read(playerControllerProvider.notifier)
                     .playQueue(list, startAt: i),

@@ -132,12 +132,13 @@ class NotificationService {
     );
   }
 
-  Future<void> showDownloadError(String trackId, String title) async {
+  Future<void> showDownloadError(String trackId, String title,
+      {String headline = '⚠ Download failed'}) async {
     if (!_ready) return;
     await _plugin.cancel(_dlId(trackId));
     await _plugin.show(
       _dlId(trackId),
-      '⚠ Download failed',
+      headline,
       title,
       const NotificationDetails(
         android: AndroidNotificationDetails(

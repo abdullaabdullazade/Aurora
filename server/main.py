@@ -8,7 +8,8 @@ range-proxy so the app never talks to googlevideo directly (no 403).
 
 Endpoints:
   GET /health
-  GET /search?q=...&limit=20      -> [{id,title,artist,duration,thumbnail,views}]
+  GET /search?q=...&limit=20&filter=tracks|playlists|albums|podcasts
+                             -> [{id,title,artist,duration,thumbnail,views,kind,url}]
   GET /stream?v=VIDEO_ID          -> audio bytes (HTTP Range supported)
 
 Run:  uvicorn main:app --host 0.0.0.0 --port 8000
@@ -20,13 +21,17 @@ import os
 import re
 import json
 import difflib
+import glob
+import logging
 import socket
 import sqlite3
 import threading
 import time
 import unicodedata
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote_plus, urlsplit
 
 import httpx
 import yt_dlp
@@ -36,6 +41,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Aurora Resolver")
+# uvicorn configures its own loggers at INFO; a fresh one would stay silent.
+logger = logging.getLogger("uvicorn.error")
 
 
 @app.middleware("http")
@@ -677,28 +684,42 @@ def delete_sync_item(
     return {"ok": True}
 
 
-def _entry(e: dict[str, Any]) -> dict[str, Any]:
+def _entry(e: dict[str, Any], *, kind: str = "track") -> dict[str, Any]:
     """One flat yt-dlp entry -> the track shape the app expects."""
     # extract_flat omits duration/views for some entries — keep them anyway.
+    eid = e.get("id") or ""
     thumbs = e.get("thumbnails") or []
     thumb = thumbs[-1]["url"] if thumbs else (
-        f"https://i.ytimg.com/vi/{e['id']}/hqdefault.jpg"
+        f"https://i.ytimg.com/vi/{eid}/hqdefault.jpg"
+        if kind == "track"
+        else ""
     )
+    url = e.get("url") or e.get("webpage_url") or ""
+    if kind != "track" and not url and eid:
+        url = f"https://www.youtube.com/playlist?list={eid}"
+    if kind == "track" and not url and eid:
+        url = f"https://www.youtube.com/watch?v={eid}"
     return {
-        "id": e["id"],
+        "id": eid,
         "title": e.get("title") or "Unknown",
         "artist": e.get("uploader") or e.get("channel")
         or e.get("uploader_id") or "Unknown",
         "duration": int(e.get("duration") or 0),
         "thumbnail": thumb,
-        "views": int(e.get("view_count") or 0),
+        "views": int(e.get("view_count") or e.get("playlist_count") or 0),
         "channelUrl": e.get("channel_url") or e.get("uploader_url"),
+        "kind": kind,
+        "url": url,
+        "live": bool(
+            e.get("is_live")
+            or e.get("live_status") in ("is_live", "is_upcoming")
+        ),
     }
 
 
-def _entries(info: dict[str, Any]) -> list[dict[str, Any]]:
+def _entries(info: dict[str, Any], *, kind: str = "track") -> list[dict[str, Any]]:
     return [
-        _entry(e)
+        _entry(e, kind=kind)
         for e in (info.get("entries") or [])
         if e and e.get("id")
     ]
@@ -712,15 +733,63 @@ def _flat_opts() -> dict[str, Any]:
     return opts
 
 
+# YouTube /results type=playlist filter (base64 protobuf sp=).
+_YT_SP_PLAYLIST = "EgIQAw%3D%3D"
+
+
 @app.get("/search")
-def search(q: str, limit: int = 20) -> list[dict[str, Any]]:
-    query = q if q.startswith("ytsearch") else f"ytsearch{limit}:{q}"
+def search(
+    q: str,
+    limit: int = 20,
+    filter: str = "tracks",
+) -> list[dict[str, Any]]:
+    """Search YouTube. filter: tracks | playlists | albums | podcasts."""
+    kind_map = {
+        "tracks": "track",
+        "playlists": "playlist",
+        "albums": "album",
+        "podcasts": "podcast",
+    }
+    f = (filter or "tracks").lower().strip()
+    if f not in kind_map:
+        raise HTTPException(400, f"unknown filter: {filter}")
+    kind = kind_map[f]
+
+    query = (q or "").strip()
+    if not query:
+        return []
+    # Results are capped at 50 anyway; an uncapped ytsearchN lets one request
+    # make yt-dlp walk thousands of hits.
+    limit = max(1, min(limit, 50))
+
     try:
-        with _ydl(_flat_opts()) as ydl:
-            info = ydl.extract_info(query, download=False)
+        if f == "tracks":
+            ytdl_q = (
+                query if query.startswith("ytsearch")
+                else f"ytsearch{limit}:{query}"
+            )
+            with _ydl(_flat_opts()) as ydl:
+                info = ydl.extract_info(ytdl_q, download=False)
+        else:
+            search_q = query
+            if f == "albums" and "album" not in query.lower():
+                search_q = f"{query} album"
+            elif f == "podcasts" and "podcast" not in query.lower():
+                search_q = f"{query} podcast"
+            url = (
+                "https://www.youtube.com/results?"
+                f"search_query={quote_plus(search_q)}&sp={_YT_SP_PLAYLIST}"
+            )
+            opts = _flat_opts()
+            # Without a cap yt-dlp walks every results page (~250 hits, 10-25s).
+            opts["playlistend"] = max(1, min(limit, 50))
+            with _ydl(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"search failed: {e}") from e
-    return _entries(info)
+
+    rows = _entries(info or {}, kind=kind)
+    return rows[: max(1, min(limit, 50))]
 
 
 @app.get("/playlist")
@@ -743,6 +812,91 @@ def playlist(url: str, limit: int = 100) -> dict[str, Any]:
         "uploader": info.get("uploader") or info.get("channel") or "",
         "tracks": tracks,
     }
+
+
+@app.get("/youtube/subscriptions")
+def youtube_subscriptions(request: Request, limit: int = 20) -> list[dict[str, Any]]:
+    """Recent uploads from the signed-in user's YouTube subscriptions."""
+    token = request.headers.get("x-google-access-token", "").strip()
+    if not token:
+        raise HTTPException(401, "Missing Google access token")
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "YouTube API key not configured")
+
+    limit = max(1, min(limit, 30))
+    tracks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        with httpx.Client(timeout=15) as cx:
+            subs_resp = cx.get(
+                "https://www.googleapis.com/youtube/v3/subscriptions",
+                params={
+                    "part": "snippet,contentDetails",
+                    "mine": "true",
+                    "maxResults": 15,
+                    "key": api_key,
+                },
+                headers=headers,
+            )
+            subs_resp.raise_for_status()
+            for sub in subs_resp.json().get("items") or []:
+                uploads = (
+                    sub.get("contentDetails", {})
+                    .get("relatedPlaylists", {})
+                    .get("uploads")
+                )
+                if not uploads:
+                    continue
+                items_resp = cx.get(
+                    "https://www.googleapis.com/youtube/v3/playlistItems",
+                    params={
+                        "part": "snippet,contentDetails",
+                        "playlistId": uploads,
+                        "maxResults": 2,
+                        "key": api_key,
+                    },
+                    headers=headers,
+                )
+                items_resp.raise_for_status()
+                for item in items_resp.json().get("items") or []:
+                    vid = item.get("contentDetails", {}).get("videoId")
+                    snippet = item.get("snippet") or {}
+                    if not vid or vid in seen:
+                        continue
+                    seen.add(vid)
+                    thumbs = snippet.get("thumbnails") or {}
+                    thumb_obj = (
+                        thumbs.get("high")
+                        or thumbs.get("medium")
+                        or thumbs.get("default")
+                        or {}
+                    )
+                    tracks.append(
+                        {
+                            "id": vid,
+                            "title": snippet.get("title") or "Unknown",
+                            "artist": snippet.get("channelTitle") or "Unknown",
+                            "duration": 0,
+                            "thumbnail": thumb_obj.get("url")
+                            or f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                            "views": 0,
+                            "channelUrl": None,
+                        }
+                    )
+                    if len(tracks) >= limit:
+                        return tracks
+    except httpx.HTTPStatusError as e:
+        # The body can echo request details; keep it in the server log only.
+        logger.info("youtube subscriptions failed: %s", e.response.text)
+        raise HTTPException(
+            502, f"YouTube API error: HTTP {e.response.status_code}"
+        ) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"subscriptions failed: {e}") from e
+    return tracks
 
 
 @app.get("/suggest")
@@ -837,6 +991,30 @@ def _lock_for(video_id: str) -> threading.Lock:
         if lk is None:
             lk = _dl_locks[video_id] = threading.Lock()
         return lk
+
+
+@contextmanager
+def _cross_process_lock(video_id: str):
+    """Serialize yt-dlp across uvicorn workers (in-memory locks are per-process)."""
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    lock_path = os.path.join(_CACHE_DIR, f".{video_id}.lock")
+    with open(lock_path, "a+", encoding="utf-8") as fh:
+        try:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        except ImportError:
+            # Windows / non-POSIX: rely on the in-process threading lock only.
+            pass
+        try:
+            yield
+        finally:
+            try:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except ImportError:
+                pass
 
 
 def _init_cache_db() -> None:
@@ -1012,7 +1190,7 @@ def _ensure_local(video_id: str) -> str:
     path = os.path.join(_CACHE_DIR, f"{video_id}.mp4")
 
     lock = _lock_for(video_id)
-    with lock:
+    with lock, _cross_process_lock(video_id):
         # Another request may have finished it while we waited.
         cached = _cache_get(video_id)
         if cached:
@@ -1027,6 +1205,7 @@ def _ensure_local(video_id: str) -> str:
         # for ~minutes when bgutil's get_pot stalls. yt-dlp's default client set
         # picks a non-PO client and pulls the bytes in ~1s (proven manually).
         last_err: Exception | None = None
+        started = time.monotonic()
         # Many fast attempts with a short timeout beat few slow ones: a good
         # residential proxy pulls the bytes in ~2-4s, a dead one is abandoned in
         # ~8s and we hop to the next exit node — so first-byte stays under the
@@ -1057,6 +1236,11 @@ def _ensure_local(video_id: str) -> str:
                     }
                 },
                 "outtmpl": os.path.join(download_dir, f"{video_id}.%(ext)s"),
+                # The .part file is streamed to the first listener while it
+                # grows, so the finished file must be that same inode: an
+                # ffmpeg remux would swap it and break the in-flight stream.
+                # ExoPlayer plays YouTube's fragmented m4a as is.
+                "fixup": "never",
                 "skip_download": False,
                 "overwrites": True,
                 "retries": 1,
@@ -1083,9 +1267,18 @@ def _ensure_local(video_id: str) -> str:
                         _record_good(proxy)
                     _cache_put(video_id, got)
                     _enforce_cache_limit(video_id)
+                    logger.info(
+                        "download %s ok attempt=%d %.1fs %d bytes",
+                        video_id, attempt + 1, time.monotonic() - started,
+                        os.path.getsize(got),
+                    )
                     return got
             except Exception as e:  # noqa: BLE001
                 last_err = e
+                logger.info(
+                    "download %s attempt=%d failed after %.1fs: %s",
+                    video_id, attempt + 1, time.monotonic() - started, e,
+                )
                 if proxy:
                     _mark_bad(proxy)
             finally:
@@ -1126,17 +1319,174 @@ def _parse_range(rng: str, size: int) -> tuple[int, int]:
     return start, min(end, size - 1)
 
 
+_bg_downloads: dict[str, Future] = {}
+_bg_downloads_lock = threading.Lock()
+_bg_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="aurora-dl")
+# How long a cold request waits for yt-dlp to write its first bytes.
+_PROGRESSIVE_START_TIMEOUT = 60.0
+# A growing file that stops growing this long is treated as a dead download.
+_PROGRESSIVE_STALL_TIMEOUT = 60.0
+_PROGRESSIVE_POLL = 0.1
+_CHUNK = 64 * 1024
+
+
+def _start_background_download(video_id: str) -> Future:
+    """One _ensure_local per video per process, shared by every listener."""
+    with _bg_downloads_lock:
+        future = _bg_downloads.get(video_id)
+        if future is None or future.done():
+            future = _bg_executor.submit(_ensure_local, video_id)
+            _bg_downloads[video_id] = future
+
+            def forget(done: Future, video_id: str = video_id) -> None:
+                with _bg_downloads_lock:
+                    if _bg_downloads.get(video_id) is done:
+                        del _bg_downloads[video_id]
+
+            future.add_done_callback(forget)
+        return future
+
+
+def _partial_download(video_id: str) -> str | None:
+    """The .part file yt-dlp is writing for this video, in any worker."""
+    pattern = os.path.join(
+        glob.escape(_CACHE_DIR), f".{video_id}-*", f"{video_id}.*.part"
+    )
+    best: tuple[int, str] | None = None
+    for candidate in glob.glob(pattern):
+        try:
+            size = os.path.getsize(candidate)
+        except OSError:
+            continue
+        if size > 0 and (best is None or size > best[0]):
+            best = (size, candidate)
+    return best[1] if best else None
+
+
+def _is_progressive_range(rng: str | None) -> bool:
+    return not rng or bool(re.fullmatch(r"bytes=0-\d*", rng.strip()))
+
+
+def _wait_for_source(video_id: str, future: Future) -> tuple[str, str]:
+    """Block until the track is cached ("file") or has started ("part")."""
+    final_path = os.path.join(_CACHE_DIR, f"{video_id}.mp4")
+    deadline = time.monotonic() + _PROGRESSIVE_START_TIMEOUT
+    while True:
+        if future.done():
+            return "file", future.result()
+        if os.path.isfile(final_path):
+            cached = _cache_get(video_id)
+            if cached:
+                return "file", cached
+        part = _partial_download(video_id)
+        if part:
+            return "part", part
+        if time.monotonic() > deadline:
+            raise HTTPException(504, "download did not start in time")
+        time.sleep(_PROGRESSIVE_POLL)
+
+
+def _tail_growing_file(fh, part_path: str, limit: int | None):
+    """Yield bytes of a file yt-dlp is still writing until it is complete.
+
+    yt-dlp renames the finished .part into place (same inode, still linked);
+    a failed attempt deletes its temp dir (inode unlinked). Ending the body
+    early on failure would look like a short song, so that raises instead and
+    the client sees a broken connection it can retry.
+    """
+    remaining = limit
+    idle_since = time.monotonic()
+    try:
+        while remaining is None or remaining > 0:
+            want = _CHUNK if remaining is None else min(_CHUNK, remaining)
+            chunk = fh.read(want)
+            if chunk:
+                if remaining is not None:
+                    remaining -= len(chunk)
+                idle_since = time.monotonic()
+                yield chunk
+                continue
+            if not os.path.exists(part_path):
+                if os.fstat(fh.fileno()).st_nlink == 0:
+                    raise RuntimeError("download attempt failed mid-stream")
+                tail = fh.read(want)
+                if not tail:
+                    return
+                if remaining is not None:
+                    remaining -= len(tail)
+                yield tail
+                continue
+            if time.monotonic() - idle_since > _PROGRESSIVE_STALL_TIMEOUT:
+                raise RuntimeError("download stalled mid-stream")
+            time.sleep(_PROGRESSIVE_POLL)
+    finally:
+        fh.close()
+
+
+def _progressive_response(
+    part_path: str, rng: str | None
+) -> StreamingResponse | None:
+    """Stream a download in progress; None if it finished meanwhile."""
+    try:
+        fh = open(part_path, "rb")
+    except FileNotFoundError:
+        return None
+    headers = {"accept-ranges": "bytes", "content-type": "audio/mp4"}
+    end = None
+    if rng:
+        m = re.fullmatch(r"bytes=0-(\d*)", rng.strip())
+        if m and m.group(1):
+            end = int(m.group(1))
+    if end is None:
+        # Total length is unknown until yt-dlp finishes: plain chunked 200.
+        return StreamingResponse(
+            _tail_growing_file(fh, part_path, None), headers=headers
+        )
+    length = end + 1
+    deadline = time.monotonic() + _PROGRESSIVE_STALL_TIMEOUT
+    while os.fstat(fh.fileno()).st_size < length and os.path.exists(part_path):
+        if time.monotonic() > deadline:
+            fh.close()
+            raise HTTPException(504, "download stalled")
+        time.sleep(_PROGRESSIVE_POLL)
+    if os.fstat(fh.fileno()).st_size < length:
+        fh.close()
+        return None
+    headers["content-range"] = f"bytes 0-{end}/*"
+    headers["content-length"] = str(length)
+    return StreamingResponse(
+        _tail_growing_file(fh, part_path, length),
+        status_code=206,
+        headers=headers,
+    )
+
+
 @app.get("/stream")
 def stream(v: str, request: Request) -> StreamingResponse:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,64}", v):
+        raise HTTPException(400, "invalid YouTube video ID")
+    rng = request.headers.get("range")
     try:
-        path = _ensure_local(v)
+        path = _cache_get(v)
+        if path is None and _is_progressive_range(rng):
+            # Cold track: start playback from the bytes yt-dlp has so far
+            # instead of making the player wait for the whole file.
+            kind, source = _wait_for_source(v, _start_background_download(v))
+            if kind == "part":
+                response = _progressive_response(source, rng)
+                if response is not None:
+                    return response
+                path = _ensure_local(v)
+            else:
+                path = source
+        elif path is None:
+            path = _ensure_local(v)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"resolve failed: {e}") from e
 
     size = os.path.getsize(path)
-    rng = request.headers.get("range")
     start, end = _parse_range(rng, size) if rng else (0, size - 1)
     length = end - start + 1
 
