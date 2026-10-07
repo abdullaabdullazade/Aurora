@@ -87,10 +87,14 @@ class SyncService {
       final uid = user.uid;
 
       // Another Google account on this device — drop the previous user's cache.
-      if (store.lastAccountUid() != uid) {
+      // A missing uid means the first sync after this check shipped (or a
+      // fresh install): the local data belongs to this user, so keep it and
+      // let the merge below upload anything the server does not have yet.
+      final previousUid = store.lastAccountUid();
+      if (previousUid != null && previousUid != uid) {
         await store.clearAccountData();
-        await store.setLastAccountUid(uid);
       }
+      if (previousUid != uid) await store.setLastAccountUid(uid);
 
       // Pull first so server tombstones prevent a playlist deleted on another
       // device from being resurrected by stale local state.

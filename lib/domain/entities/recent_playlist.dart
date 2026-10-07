@@ -81,7 +81,8 @@ class RecentPlaylist {
     required List<Track> tracks,
   }) =>
       RecentPlaylist(
-        id: 'yt:${browseUrl.hashCode}',
+        // String.hashCode is not guaranteed stable across runs; the URL is.
+        id: 'yt:$browseUrl',
         title: title,
         artworkUrl: artworkUrl,
         source: RecentPlaylistSource.youtube,

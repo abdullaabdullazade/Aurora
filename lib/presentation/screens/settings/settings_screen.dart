@@ -6,6 +6,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../state/favorites_controller.dart';
+import '../../state/player_controller.dart';
 import '../../state/providers.dart';
 import '../../state/settings_controller.dart';
 import '../../state/auth_controller.dart';
@@ -365,6 +366,9 @@ class _AccountSection extends ConsumerWidget {
                 onPressed: () async {
                   final sync = ref.read(syncServiceProvider);
                   await sync.flushSnapshot();
+                  // The queue may hold this account's downloads, which are
+                  // deleted below; the next user must not inherit it.
+                  await ref.read(playerControllerProvider.notifier).close();
                   await authController.signOut();
                   await sync.onSignedOut();
                 },

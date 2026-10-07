@@ -443,8 +443,16 @@ class _OutputSheetState extends ConsumerState<_OutputSheet> {
     }
     setState(() => _busy = false);
     ref.invalidate(audioOutputsProvider);
+    // Android 13+ reserves A2DP connect/disconnect for system apps, so the
+    // in-app switch often fails there; hand the user the system screen.
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not connect')),
+      const SnackBar(
+        content: Text('Could not switch output from the app'),
+        action: SnackBarAction(
+          label: 'Bluetooth settings',
+          onPressed: openOutputPicker,
+        ),
+      ),
     );
   }
 

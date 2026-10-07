@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -289,9 +290,22 @@ class LocalStore {
   Future<void> clearStats() => _stats.clear();
 
   /// Wipes per-account data when switching users or signing out.
-  /// Device prefs (theme, crossfade, hidden folders) are kept.
+  /// Device prefs (theme, crossfade, hidden folders) are kept. Downloaded
+  /// audio files are deleted too: once the index is gone nothing references
+  /// them, and the next account restores its own downloads on sign-in.
   Future<void> clearAccountData() async {
+    for (final track in downloads()) {
+      final path = track.localPath;
+      if (path == null || path.startsWith('content://')) continue;
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (e) {
+        debugPrint('[store] could not delete download $path: $e');
+      }
+    }
     await Future.wait([
+      clearPlaybackSession(),
       _playlists.clear(),
       _favorites.clear(),
       _recents.clear(),

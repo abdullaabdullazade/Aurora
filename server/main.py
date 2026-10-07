@@ -886,7 +886,11 @@ def youtube_subscriptions(request: Request, limit: int = 20) -> list[dict[str, A
                     if len(tracks) >= limit:
                         return tracks
     except httpx.HTTPStatusError as e:
-        raise HTTPException(502, f"YouTube API error: {e.response.text}") from e
+        # The body can echo request details; keep it in the server log only.
+        logger.info("youtube subscriptions failed: %s", e.response.text)
+        raise HTTPException(
+            502, f"YouTube API error: HTTP {e.response.status_code}"
+        ) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"subscriptions failed: {e}") from e
     return tracks

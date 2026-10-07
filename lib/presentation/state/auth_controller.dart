@@ -17,14 +17,8 @@ class AuthController {
   );
 
   Future<User?> signInWithGoogle() async {
-    if (AppConfig.googleWebClientId.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'missing-web-client-id',
-        message:
-            'Brak AURORA_GOOGLE_WEB_CLIENT_ID. Firebase Console → Authentication → Google → Web client ID.',
-      );
-    }
-
+    // Without AURORA_GOOGLE_WEB_CLIENT_ID google_sign_in falls back to the
+    // default_web_client_id generated from google-services.json.
     var googleUser = await _googleSignIn.signIn();
     if (googleUser == null) return null;
 
@@ -40,8 +34,8 @@ class AuthController {
     if (googleAuth.idToken == null || googleAuth.idToken!.isEmpty) {
       throw FirebaseAuthException(
         code: 'missing-id-token',
-        message:
-            'Google nie zwróciło idToken. Sprawdź Web Client ID w Firebase / Google Cloud.',
+        message: 'Google did not return an ID token. Check the Web client ID '
+            'in Firebase / Google Cloud.',
       );
     }
 

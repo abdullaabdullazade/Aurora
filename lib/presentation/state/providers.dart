@@ -49,8 +49,10 @@ final forYouProvider = FutureProvider<List<Track>>((ref) async {
   final merged = <Track>[];
   final seen = <String>{};
   for (final artist in artists) {
-    final tracks =
-        await repo.searchTracks('$artist music', limit: 8);
+    // One failed search should not blank the whole section.
+    final tracks = await repo
+        .searchTracks('$artist music', limit: 8)
+        .catchError((Object _) => const <Track>[]);
     for (final track in tracks) {
       if (seen.add(track.id)) merged.add(track);
     }

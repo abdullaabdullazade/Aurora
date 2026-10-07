@@ -424,6 +424,7 @@ class PlayerController extends Notifier<PlayerState> {
         autoplay: !_userPaused,
         startAt: startAt,
         recordRecent: false,
+        streamRecovery: true,
       ));
     } else {
       _handlingStreamError = false;
@@ -983,6 +984,7 @@ class PlayerController extends Notifier<PlayerState> {
     bool autoplay = false,
     Duration startAt = Duration.zero,
     bool recordRecent = true,
+    bool streamRecovery = false,
   }) async {
     final track = state.current;
     if (track == null) return;
@@ -1109,7 +1111,9 @@ class PlayerController extends Notifier<PlayerState> {
       }
 
       if (token != _loadToken) return;
-      _midStreamReloadCount = 0;
+      // A recovery reload must not reset the budget, or a stream that keeps
+      // breaking would be reloaded forever.
+      if (!streamRecovery) _midStreamReloadCount = 0;
       _handlingStreamError = false;
       if (track.id != _advanceFromId) _advanceFromId = null;
       _applyPalette(track);
