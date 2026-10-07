@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="aurora-server"
 LABEL org.opencontainers.image.description="Aurora Music resolver — FastAPI + yt-dlp stream proxy"
-LABEL org.opencontainers.image.source="https://github.com/marcinx98x/Aurora/tree/main/server"
+LABEL org.opencontainers.image.source="https://github.com/abdullaabdullazade/Aurora/tree/main/server"
 
 WORKDIR /app
 

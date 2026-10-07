@@ -8,7 +8,7 @@
 
 real search & streaming · synced lyrics · offline downloads · on-device library · playlists
 
-**[Download latest APK](https://github.com/marcinx98x/Aurora/releases/latest/download/Aurora-Music.apk)** · **[Website](https://abdullaabdullazade.github.io/Aurora/)** · **[Video demo](docs/media/aurora-demo.mp4)**
+**[Download latest APK](https://github.com/abdullaabdullazade/Aurora/releases/latest/download/Aurora-Music.apk)** · **[Website](https://abdullaabdullazade.github.io/Aurora/)** · **[Video demo](docs/media/aurora-demo.mp4)**
 
 </div>
 
@@ -152,7 +152,7 @@ Client-side scraping gets rate-limited and `403`'d per device IP and breaks when
 changes. `yt-dlp` is the most robust extractor available, so it runs server-side: one stable IP,
 a shared cache, and a Range-seekable audio proxy.
 
-**Docker Hub:** [`marcinx98x/aurora-server`](https://hub.docker.com/r/marcinx98x/aurora-server) — recommended for Synology NAS, VPS, or any Docker host. No local Python or `Dockerfile` required on the server. The image runs **uvicorn with 2 workers** so a cache-hit for the next track can proceed without waiting on the current stream.
+**Docker** is recommended for Synology NAS, VPS, or any Docker host. The image runs **uvicorn with 2 workers** so a cache-hit for the next track can proceed without waiting on the current stream.
 
 ```
 GET /health
@@ -167,49 +167,29 @@ GET/PUT /sync                → Firebase-authenticated account backup and resto
 
 ### Docker Compose (recommended)
 
-The compose file pulls a pre-built image from Docker Hub (`pull_policy: always`). You only need `.env`, `cache/`, and `data/` on the host.
+The compose file builds the image from `server/Dockerfile` and uses host networking, so the LAN URL the server publishes to the registry is the one the app can reach.
 
 ```bash
 cd server
 cp .env.example .env
 # Required in .env: AURORA_SECRET_KEY, FIREBASE_PROJECT_ID
-docker compose pull
-docker compose up -d
-curl http://localhost:18000/health   # → {"ok":true}
+docker compose up -d --build
+curl http://localhost:8000/health   # → {"ok":true}
 ```
 
 | Setting | Value |
 |---------|--------|
-| Image | `marcinx98x/aurora-server:latest` |
-| Host port | **18000** (maps to container **8000**) |
+| Port | **8000** (host networking) |
 | `./cache` | Stream cache (audio + SQLite index) |
 | `./data` | User sync database (Firebase backup) |
 
-**Synology NAS:** copy `docker-compose.yml` and `.env` to your Docker folder (e.g. `/volume1/docker/aurora`), then run the same `docker compose pull && docker compose up -d` via SSH or Container Manager. Point Cloudflare/your reverse proxy at port **18000**.
+**Synology NAS:** copy the `server/` folder and `.env` to your Docker folder (e.g. `/volume1/docker/aurora`), then run `docker compose up -d --build` via SSH or Container Manager. Point Cloudflare/your reverse proxy at port **8000**.
 
-**Update to a new release:**
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-One-liner without Compose:
-
-```bash
-docker pull marcinx98x/aurora-server:latest
-docker run -d --name aurora-server \
-  -p 18000:8000 \
-  --env-file .env \
-  -v ./cache:/app/cache \
-  -v ./data:/app/data \
-  --restart unless-stopped \
-  marcinx98x/aurora-server:latest
-```
+**Update:** `git pull && docker compose up -d --build`.
 
 Full server docs: [`server/README.md`](server/README.md).
 
-Pushes to `main` that touch `server/**` auto-publish a new image via GitHub Actions (secret `DOCKERHUB_TOKEN` or `MARCINX98X`).
+Pushes to `main` that touch `server/**` can also publish an image to Docker Hub via GitHub Actions (see below).
 
 ### Local Python (development)
 
@@ -341,13 +321,12 @@ flutter build apk --release --dart-define-from-file=.env
 
 ### Docker server image
 
-Pushes to `main` that change `server/**` build and push [`marcinx98x/aurora-server`](https://hub.docker.com/r/marcinx98x/aurora-server) when a Docker Hub token is configured in GitHub Actions secrets:
+Pushes to `main` that change `server/**` build and push `<DOCKERHUB_USERNAME>/aurora-server`. The workflow is skipped until Docker Hub publishing is configured in the repository settings:
 
-| Secret | Value |
-|--------|--------|
-| `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) |
-
-Alternatively, a secret named `MARCINX98X` with the same token also works. The Docker Hub username is fixed to `marcinx98x` in the workflow.
+| Name | Kind | Value |
+|------|------|--------|
+| `DOCKERHUB_USERNAME` | Actions variable | Docker Hub account that owns the image |
+| `DOCKERHUB_TOKEN` | Actions secret | Docker Hub access token (Read & Write) |
 
 You can also trigger **Publish Docker Hub** manually from the Actions tab.
 

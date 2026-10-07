@@ -30,7 +30,9 @@ Future<void> main() async {
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.aurora.music.channel.audio',
     androidNotificationChannelName: 'Aurora playback',
-    androidNotificationOngoing: true,
+    // Ongoing must stay off: audio_service asserts it requires
+    // androidStopForegroundOnPause, which is disabled below.
+    androidNotificationOngoing: false,
     // Keep FGS between tracks — remote streams reload in Dart after EOS;
     // stopping foreground freezes that work until the user opens the app.
     androidStopForegroundOnPause: false,

@@ -1,11 +1,11 @@
 services:
   aurora:
-    image: marcinx98x/aurora-server:latest
-    pull_policy: always
+    build: .
     container_name: aurora-server
     restart: unless-stopped
-    ports:
-      - "18000:8000"
+    # Host networking keeps the LAN IP / port that _register_loop publishes to
+    # the registry identical to what the app can reach.
+    network_mode: "host"
     env_file:
       - .env
     volumes:

@@ -1,41 +1,41 @@
 {
   "project_info": {
-    "project_number": "476160628645",
-    "project_id": "aurora-74905",
-    "storage_bucket": "aurora-74905.firebasestorage.app"
+    "project_number": "669587044386",
+    "project_id": "aurora-1058f",
+    "storage_bucket": "aurora-1058f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:476160628645:android:0d81724bbc71a75c41fa4c",
+        "mobilesdk_app_id": "1:669587044386:android:057d2d4ab4edf9fbab327b",
         "android_client_info": {
           "package_name": "com.aurora.music"
         }
       },
       "oauth_client": [
         {
-          "client_id": "476160628645-6suo6hvp5glj7gpppdhfoon8j448qnod.apps.googleusercontent.com",
+          "client_id": "669587044386-6tersr45pcfstj4103t3sofft293gp7f.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.aurora.music",
-            "certificate_hash": "249ec432cd30cba9b5213abedf672b04c8e0e3972"
+            "certificate_hash": "c44aceb3c0ad668edf3d2c95a519942c1c7fd2d7"
           }
         },
         {
-          "client_id": "476160628645-3ei6ufqikrpsgbaldg211s1hn5pp4bds.apps.googleusercontent.com",
+          "client_id": "669587044386-qa1la68ove2ghca05c9n06clkud8aofd.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAK9rM3KaROR20KB0RiEYeTa2BuRBwGuec"
+          "current_key": "AIzaSyDGPfa9qk-SmvXnj_Efd7khd5lsb1lfc88"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "476160628645-3ei6ufqikrpsgbaldg211s1hn5pp4bds.apps.googleusercontent.com",
+              "client_id": "669587044386-qa1la68ove2ghca05c9n06clkud8aofd.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

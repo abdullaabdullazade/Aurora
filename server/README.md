@@ -1,19 +1,16 @@
 # Aurora Resolver Server
 
-FastAPI + yt-dlp backend for the [Aurora Music](https://github.com/marcinx98x/Aurora) Android app. Handles YouTube search, playlist import, audio streaming (HTTP Range), Firebase sync, and optional lyrics.
-
-**Docker Hub:** [`marcinx98x/aurora-server`](https://hub.docker.com/r/marcinx98x/aurora-server)
+FastAPI + yt-dlp backend for the [Aurora Music](https://github.com/abdullaabdullazade/Aurora) Android app. Handles YouTube search, playlist import, audio streaming (HTTP Range), Firebase sync, and optional lyrics.
 
 ## Quick start (Docker Compose)
 
-Recommended for Synology NAS, VPS, and any Docker host. The image is built in CI and published to Docker Hub — you do **not** need Python or a local `Dockerfile` on the server.
+Recommended for Synology NAS, VPS, and any Docker host. Compose builds the image from this folder's `Dockerfile`.
 
 1. Prepare the folder:
 
 ```bash
-mkdir -p aurora && cd aurora
-cp /path/to/repo/server/.env.example .env
-cp /path/to/repo/server/docker-compose.yml .
+cd /path/to/repo/server
+cp .env.example .env
 mkdir -p cache data
 ```
 
@@ -27,14 +24,13 @@ FIREBASE_PROJECT_ID=your-firebase-project-id
 3. Start:
 
 ```bash
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 ```
 
 4. Verify:
 
 ```bash
-curl http://localhost:18000/health
+curl http://localhost:8000/health
 # {"ok":true}
 ```
 
@@ -43,10 +39,8 @@ curl http://localhost:18000/health
 ```yaml
 services:
   aurora:
-    image: marcinx98x/aurora-server:latest
-    pull_policy: always          # always fetch latest on restart
-    ports:
-      - "18000:8000"             # host:container
+    build: .
+    network_mode: "host"         # registry gets the real LAN IP:8000
     env_file:
       - .env
     volumes:
@@ -54,44 +48,35 @@ services:
       - ./data:/app/data         # user sync DB
 ```
 
-Uvicorn listens on **8000 inside the container** with **2 workers**. Downloads use a **cross-process file lock** per video id so workers do not race yt-dlp on the same cold miss. Map any host port you like (18000 is the default in this repo).
+Uvicorn listens on **8000** with **2 workers**. Downloads use a **cross-process file lock** per video id so workers do not race yt-dlp on the same cold miss. Host networking is used so the URL published to the LAN registry (`REGISTRY_URL`) is reachable by the app; if you switch to a `ports:` mapping, keep host and container port identical (e.g. `"8000:8000"`) or registry auto-discovery advertises the wrong port.
 
 ## Synology NAS
 
-1. Create a shared folder, e.g. `docker/aurora`.
-2. Copy `docker-compose.yml` and `.env` into it.
-3. Create subfolders `cache` and `data` (or let Docker create them on first run).
-4. In **Container Manager** → Project → create from `docker-compose.yml`, or via SSH:
+1. Copy the `server/` folder into a shared folder, e.g. `docker/aurora`, and add your `.env`.
+2. Create subfolders `cache` and `data` (or let Docker create them on first run).
+3. In **Container Manager** → Project → create from `docker-compose.yml`, or via SSH:
 
 ```bash
 cd /volume1/docker/aurora
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 ```
 
-5. Reverse proxy (Cloudflare, Synology reverse proxy) → `http://NAS_IP:18000`.
+4. Reverse proxy (Cloudflare, Synology reverse proxy) → `http://NAS_IP:8000`.
 
-**Upgrade after a new Docker Hub release:**
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-Your `.env`, `cache/`, and `data/` are preserved across updates.
+**Upgrade:** pull the new server code, then `docker compose up -d --build`. Your `.env`, `cache/`, and `data/` are preserved.
 
 ## docker run (without Compose)
 
 ```bash
-docker pull marcinx98x/aurora-server:latest
+docker build -t aurora-server .
 
 docker run -d --name aurora-server \
-  -p 18000:8000 \
+  --network host \
   --env-file .env \
   -v ./cache:/app/cache \
   -v ./data:/app/data \
   --restart unless-stopped \
-  marcinx98x/aurora-server:latest
+  aurora-server
 ```
 
 ## Required environment variables
@@ -124,27 +109,16 @@ Do not delete these folders unless you intend to wipe cached streams or synced a
 
 ## CI: publish a new image
 
-GitHub Actions workflow [`.github/workflows/docker-hub.yml`](../.github/workflows/docker-hub.yml) builds and pushes on every push to `main` that changes `server/**`.
+GitHub Actions workflow [`.github/workflows/docker-hub.yml`](../.github/workflows/docker-hub.yml) builds and pushes `<DOCKERHUB_USERNAME>/aurora-server` on every push to `main` that changes `server/**`. It is skipped until both are configured:
 
-Repository secret (one of):
-
-| Secret | Value |
-|--------|--------|
-| `DOCKERHUB_TOKEN` | Docker Hub access token (Read & Write) |
-| `MARCINX98X` | Same token (legacy fallback name) |
+| Name | Kind | Value |
+|------|------|--------|
+| `DOCKERHUB_USERNAME` | Actions variable | Docker Hub account that owns the image |
+| `DOCKERHUB_TOKEN` | Actions secret | Docker Hub access token (Read & Write) |
 
 Manual trigger: GitHub → **Actions** → **Publish Docker Hub** → **Run workflow**.
 
-## Build from source (developers)
-
-Only needed if you change server code locally:
-
-```bash
-docker build -t marcinx98x/aurora-server:latest .
-docker push marcinx98x/aurora-server:latest   # requires docker login
-```
-
-Or run without Docker:
+## Run without Docker (developers)
 
 ```bash
 python -m pip install -r requirements.txt
