@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
@@ -294,9 +295,16 @@ class LocalStore {
   /// audio files are deleted too: once the index is gone nothing references
   /// them, and the next account restores its own downloads on sign-in.
   Future<void> clearAccountData() async {
+    // Only files DownloadController wrote; never anything else on the device.
+    String? ownDir;
+    try {
+      ownDir = '${(await getApplicationDocumentsDirectory()).path}/aurora/';
+    } catch (e) {
+      debugPrint('[store] documents dir unavailable: $e');
+    }
     for (final track in downloads()) {
       final path = track.localPath;
-      if (path == null || path.startsWith('content://')) continue;
+      if (ownDir == null || path == null || !path.startsWith(ownDir)) continue;
       try {
         final file = File(path);
         if (await file.exists()) await file.delete();

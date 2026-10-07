@@ -365,7 +365,16 @@ class _AccountSection extends ConsumerWidget {
                 icon: const Icon(Icons.logout_rounded),
                 onPressed: () async {
                   final sync = ref.read(syncServiceProvider);
-                  await sync.flushSnapshot();
+                  final messenger = ScaffoldMessenger.of(context);
+                  // Signing out wipes this account's local data, so it must
+                  // reach the server first; otherwise offline changes are lost.
+                  if (!await sync.flushSnapshot()) {
+                    messenger.showSnackBar(const SnackBar(
+                      content: Text('Could not back up your library. '
+                          'Check your connection and try again.'),
+                    ));
+                    return;
+                  }
                   // The queue may hold this account's downloads, which are
                   // deleted below; the next user must not inherit it.
                   await ref.read(playerControllerProvider.notifier).close();

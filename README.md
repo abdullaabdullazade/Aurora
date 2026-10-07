@@ -285,7 +285,7 @@ To prevent unauthorized access to your FastAPI resolver server:
 ### Firebase & Google Sign-In Setup
 To enable Google Sign-In and Cloud Sync:
 1. Place your `google-services.json` in `android/app/`.
-2. Set `AURORA_GOOGLE_WEB_CLIENT_ID` in `.env` (Firebase Console → Authentication → Google → **Web client ID**).
+2. Optional: set `AURORA_GOOGLE_WEB_CLIENT_ID` in `.env` (Firebase Console → Authentication → Google → **Web client ID**). Without it the app uses the `default_web_client_id` generated from `google-services.json`.
 3. Go to **Firebase Console** -> **Project Settings** -> **Your Android App**.
 4. Obtain your signing certificate SHA-1 fingerprint:
    ```bash

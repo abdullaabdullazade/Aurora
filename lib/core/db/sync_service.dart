@@ -20,7 +20,11 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     if (isSignedIn) {
       unawaited(service.syncAll());
     } else if (wasSignedIn) {
-      unawaited(service.onSignedOut());
+      // Settings clears local data itself after a successful backup. A
+      // sign-out from anywhere else (revoked token, deleted account) keeps it:
+      // unsynced changes survive, and the next sign-in of a different account
+      // clears it via the uid check in syncAll.
+      service.cancelPendingUpload();
     }
   }, fireImmediately: true);
   return service;
@@ -79,27 +83,29 @@ class SyncService {
     if (_syncing) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final options = await _authOptions();
-    if (options == null) return;
     _syncing = true;
     try {
+      final options = await _authOptions();
+      if (options == null) return;
       final store = _ref.read(localStoreProvider);
       final uid = user.uid;
-
-      // Another Google account on this device — drop the previous user's cache.
-      // A missing uid means the first sync after this check shipped (or a
-      // fresh install): the local data belongs to this user, so keep it and
-      // let the merge below upload anything the server does not have yet.
-      final previousUid = store.lastAccountUid();
-      if (previousUid != null && previousUid != uid) {
-        await store.clearAccountData();
-      }
-      if (previousUid != uid) await store.setLastAccountUid(uid);
 
       // Pull first so server tombstones prevent a playlist deleted on another
       // device from being resurrected by stale local state.
       final response = await _dio.get('/sync', options: options);
       final data = Map<String, dynamic>.from(response.data as Map);
+
+      // Another Google account on this device — drop the previous user's
+      // cache, but only once the server answered, so an offline start never
+      // leaves the user with an empty library. A missing uid (first sync
+      // after this check shipped, fresh install, or after a clean sign-out)
+      // means the local data belongs to this user: keep it and let the merge
+      // below upload anything the server does not have yet.
+      final previousUid = store.lastAccountUid();
+      if (previousUid != null && previousUid != uid) {
+        await store.clearAccountData();
+      }
+      if (previousUid != uid) await store.setLastAccountUid(uid);
 
       for (final id in (data['deletedPlaylists'] as List? ?? const [])) {
         await store.deletePlaylist(id as String);
@@ -150,13 +156,21 @@ class SyncService {
   }
 
   /// Uploads the current Hive snapshot while the Firebase session is still valid.
-  /// Call this before [FirebaseAuth.signOut] so recents/stats are not lost.
-  Future<void> flushSnapshot() async {
+  /// Call this before [FirebaseAuth.signOut]; returns false when the upload
+  /// did not reach the server, in which case local data must not be wiped.
+  Future<bool> flushSnapshot() async {
     _uploadDebounce?.cancel();
-    await _pushSnapshot();
+    // A full sync in progress would make _pushSnapshot a no-op.
+    for (var i = 0; _syncing && i < 100; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return _pushSnapshot();
   }
 
-  /// Idempotent: safe if Settings awaits this and the auth listener also fires.
+  void cancelPendingUpload() => _uploadDebounce?.cancel();
+
+  /// Clears this account's local data after a successful [flushSnapshot].
+  /// Idempotent: concurrent calls are ignored.
   Future<void> onSignedOut() async {
     if (_clearingAccount) return;
     _clearingAccount = true;
@@ -227,11 +241,11 @@ class SyncService {
         delay: const Duration(milliseconds: 300),
       );
 
-  Future<void> _pushSnapshot() async {
-    if (_syncing) return;
-    final options = await _authOptions();
-    if (options == null) return;
+  Future<bool> _pushSnapshot() async {
+    if (_syncing) return false;
     try {
+      final options = await _authOptions();
+      if (options == null) return false;
       final store = _ref.read(localStoreProvider);
       await _dio.put(
         '/sync',
@@ -242,12 +256,14 @@ class SyncService {
         },
         options: options,
       );
+      return true;
     } on DioException catch (error) {
       debugPrint('[sync] snapshot upload failed: '
           '${error.response?.statusCode} ${error.message}');
     } catch (error) {
       debugPrint('[sync] snapshot upload failed: $error');
     }
+    return false;
   }
 
   void _notifyLocalChanged() {
