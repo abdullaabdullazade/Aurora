@@ -337,5 +337,57 @@ class LockStripeTest(unittest.TestCase):
         self.assertLessEqual(len(locks), main._LOCK_STRIPES)
 
 
+class FlatExtractRetryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.calls: list[str | None] = []
+        originals = (main._ydl, main._pick_proxy, main._mark_bad,
+                     main._record_good)
+        self.addCleanup(lambda: (
+            setattr(main, "_ydl", originals[0]),
+            setattr(main, "_pick_proxy", originals[1]),
+            setattr(main, "_mark_bad", originals[2]),
+            setattr(main, "_record_good", originals[3]),
+        ))
+        self.bad: list[str] = []
+        pool = ["http://p1:1", "http://p2:2", "http://p3:3"]
+        main._pick_proxy = lambda exclude=None: next(
+            (p for p in pool if p not in (exclude or set())), None)
+        main._mark_bad = self.bad.append
+        main._record_good = lambda p: None
+
+    def _fake_ydl(self, fail_for: set[str | None]):
+        test = self
+
+        class Fake:
+            def __init__(self, opts):
+                self.proxy = opts.get("proxy")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return None
+
+            def extract_info(self, target, download=False):
+                test.calls.append(self.proxy)
+                if self.proxy in fail_for:
+                    raise RuntimeError("Unable to connect to proxy")
+                return {"entries": []}
+
+        return lambda opts, use_cookies=True: Fake(opts)
+
+    def test_moves_past_dead_proxies(self) -> None:
+        main._ydl = self._fake_ydl({"http://p1:1"})
+        self.assertEqual(main._extract_flat("ytsearch1:x"), {"entries": []})
+        self.assertEqual(self.calls, ["http://p1:1", "http://p2:2"])
+        self.assertEqual(self.bad, ["http://p1:1"])
+
+    def test_falls_back_to_direct(self) -> None:
+        main._ydl = self._fake_ydl({"http://p1:1", "http://p2:2", "http://p3:3"})
+        main._extract_flat("ytsearch1:x")
+        self.assertEqual(self.calls[-1], None)
+        self.assertEqual(len(self.calls), 4)
+
+
 if __name__ == "__main__":
     unittest.main()

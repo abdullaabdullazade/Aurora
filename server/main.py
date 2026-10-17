@@ -760,12 +760,55 @@ def _entries(info: dict[str, Any], *, kind: str = "track") -> list[dict[str, Any
     ]
 
 
-def _flat_opts() -> dict[str, Any]:
-    opts: dict[str, Any] = {"extract_flat": True}
-    proxy = _pick_proxy()
-    if proxy:
-        opts["proxy"] = proxy
-    return opts
+_FLAT_PROXY_ATTEMPTS = 3
+
+
+def _is_proxy_error(e: Exception) -> bool:
+    text = str(e).lower()
+    return "proxy" in text or "timed out" in text or "connection" in text
+
+
+def _extract_flat(target: str, extra: dict[str, Any] | None = None,
+                  use_cookies: bool = True) -> dict[str, Any]:
+    """Flat (metadata-only) extraction that survives dead proxies.
+
+    A fresh server has no known-good proxies yet, so a random pick can be a
+    dead exit node; one attempt used to fail the whole search after ~20s per
+    retry. Try a few proxies (marking failures bad), then go direct — flat
+    search/playlist pages work from a datacenter IP far more often than
+    stream downloads do.
+    """
+    used: set[str] = set()
+    last: Exception | None = None
+    for attempt in range(_FLAT_PROXY_ATTEMPTS + 1):
+        opts: dict[str, Any] = {"extract_flat": True, "socket_timeout": 10}
+        if attempt < _FLAT_PROXY_ATTEMPTS:
+            proxy = _pick_proxy(exclude=used)
+            if proxy is None and attempt > 0:
+                continue  # pool exhausted: skip to the direct attempt
+            if proxy:
+                opts["proxy"] = proxy
+                used.add(proxy)
+        else:
+            proxy = None
+        opts.update(extra or {})
+        try:
+            with _ydl(opts, use_cookies=use_cookies) as ydl:
+                info = ydl.extract_info(target, download=False)
+            if proxy:
+                _record_good(proxy)
+            return info or {}
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if proxy and _is_proxy_error(e):
+                _mark_bad(proxy)
+                continue
+            if proxy is None:
+                break
+            # Not a proxy problem (e.g. private playlist): retrying won't help.
+            raise
+    assert last is not None
+    raise last
 
 
 # YouTube /results type=playlist filter (base64 protobuf sp=).
@@ -803,8 +846,7 @@ def search(
                 query if query.startswith("ytsearch")
                 else f"ytsearch{limit}:{query}"
             )
-            with _ydl(_flat_opts()) as ydl:
-                info = ydl.extract_info(ytdl_q, download=False)
+            info = _extract_flat(ytdl_q)
         else:
             search_q = query
             if f == "albums" and "album" not in query.lower():
@@ -815,11 +857,8 @@ def search(
                 "https://www.youtube.com/results?"
                 f"search_query={quote_plus(search_q)}&sp={_YT_SP_PLAYLIST}"
             )
-            opts = _flat_opts()
             # Without a cap yt-dlp walks every results page (~250 hits, 10-25s).
-            opts["playlistend"] = max(1, min(limit, 50))
-            with _ydl(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            info = _extract_flat(url, {"playlistend": max(1, min(limit, 50))})
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"search failed: {e}") from e
 
@@ -846,12 +885,11 @@ def playlist(url: str, limit: int = 100) -> dict[str, Any]:
         (parts.hostname or "").lower() not in _PLAYLIST_HOSTS
     ):
         raise HTTPException(400, "only YouTube playlist links are supported")
-    opts = _flat_opts()
-    opts["noplaylist"] = False
-    opts["playlistend"] = max(1, min(limit, 500))
     try:
-        with _ydl(opts, use_cookies=True) as ydl:
-            info = ydl.extract_info(url, download=False)
+        info = _extract_flat(url, {
+            "noplaylist": False,
+            "playlistend": max(1, min(limit, 500)),
+        })
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"playlist failed: {e}") from e
 
