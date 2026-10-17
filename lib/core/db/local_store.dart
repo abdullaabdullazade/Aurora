@@ -47,6 +47,7 @@ class LocalStore {
   static const _playbackSessionKey = 'playback_session';
   static const _playbackSessionMaxAge = Duration(days: 30);
   static const _downloadTombstonesKey = 'download_tombstones';
+  static const _statsResetKey = 'stats_reset_at';
   static const _tombstoneMaxAge = Duration(days: 90);
 
   late final Box<dynamic> _playlists;
@@ -329,7 +330,14 @@ class LocalStore {
     return rows;
   }
 
-  Future<void> clearStats() => _stats.clear();
+  /// Resets stats here and, through [_statsResetKey] in the sync snapshot,
+  /// on the user's other devices — otherwise their snapshot restores them.
+  Future<void> clearStats() async {
+    await _stats.clear();
+    await _recents.put(_statsResetKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  int _statsResetAt() => (_recents.get(_statsResetKey) as num?)?.toInt() ?? 0;
 
   /// Forgets a track everywhere history is kept (used when its file is gone).
   Future<void> forgetTrackHistory(String id) async {
@@ -420,6 +428,7 @@ class LocalStore {
             },
         ],
         'deletedDownloads': _downloadTombstones(),
+        'statsResetAt': _statsResetAt(),
         'lyrics': {
           for (final entry in _lyrics.toMap().entries)
             entry.key.toString(): _jsonValue(entry.value),
@@ -502,10 +511,22 @@ class LocalStore {
       }
     }
 
+    // A reset on any device wins over rows last played before it.
+    final remoteReset = (state['statsResetAt'] as num?)?.toInt() ?? 0;
+    if (remoteReset > _statsResetAt()) {
+      for (final row in stats()) {
+        final last = (row['last'] as num?)?.toInt() ?? 0;
+        final id = row['id'];
+        if (last <= remoteReset && id is String) await _stats.delete(id);
+      }
+      await _recents.put(_statsResetKey, remoteReset);
+    }
+    final resetAt = _statsResetAt();
     for (final raw in (state['stats'] as List? ?? const []).whereType<Map>()) {
       final remote = Map<String, dynamic>.from(raw);
       final id = remote['id'];
       if (id is! String) continue;
+      if (((remote['last'] as num?)?.toInt() ?? 0) <= resetAt) continue;
       final local = _statRow(id);
       final remoteLast = (remote['last'] as num?)?.toInt() ?? 0;
       final localLast = (local['last'] as num?)?.toInt() ?? 0;

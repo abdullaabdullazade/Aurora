@@ -29,6 +29,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import zlib
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any
@@ -101,6 +102,8 @@ def _start_register() -> None:
     threading.Thread(target=_register_loop, daemon=True).start()
     # Seed the clean-proxy pool so the first plays are fast, then keep it topped.
     threading.Thread(target=_warm_loop, daemon=True).start()
+    _remove_legacy_lock_files()
+
 
 def _cookiefile() -> str | None:
     """YouTube cookies for datacenter extraction (bypasses the bot/login wall).
@@ -574,6 +577,9 @@ def _firebase_uid(request: Request) -> str:
     return uid
 
 
+_MAX_SYNC_ITEMS = 10_000
+
+
 def _valid_sync_item(kind: str, item: dict[str, Any]) -> tuple[str, str]:
     if kind not in {"playlists", "favorites", "state"}:
         raise HTTPException(400, "invalid sync record kind")
@@ -656,6 +662,9 @@ def sync_up(payload: dict[str, Any], request: Request) -> dict[str, int]:
         isinstance(item, dict) for item in favorites
     ):
         raise HTTPException(400, "favorites must be a list")
+    # Each record is size-checked; also bound how many one request may write.
+    if len(playlists) > _MAX_SYNC_ITEMS or len(favorites) > _MAX_SYNC_ITEMS:
+        raise HTTPException(413, "too many sync records in one request")
     if state is not None and not isinstance(state, dict):
         raise HTTPException(400, "state must be an object")
     _init_user_db()
@@ -1035,11 +1044,41 @@ def _lock_for(video_id: str) -> threading.Lock:
         return lk
 
 
+_LOCK_STRIPES = 64
+
+
+def _remove_legacy_lock_files() -> None:
+    """Delete leftovers in the cache dir: the per-video .{id}.lock files older
+    versions created, and download temp dirs a killed worker never removed
+    (only stale ones — the other worker may be downloading right now)."""
+    root = glob.escape(_CACHE_DIR)
+    for path in glob.glob(os.path.join(root, ".*.lock")):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    import shutil
+    stale = time.time() - 3600
+    for path in glob.glob(os.path.join(root, ".*-*")):
+        try:
+            if os.path.isdir(path) and os.path.getmtime(path) < stale:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
 @contextmanager
 def _cross_process_lock(video_id: str):
-    """Serialize yt-dlp across uvicorn workers (in-memory locks are per-process)."""
-    os.makedirs(_CACHE_DIR, exist_ok=True)
-    lock_path = os.path.join(_CACHE_DIR, f".{video_id}.lock")
+    """Serialize yt-dlp across uvicorn workers (in-memory locks are per-process).
+
+    Lock files are striped over a fixed set instead of one per video, which
+    left a file behind for every track ever played. Two videos sharing a
+    stripe only wait for each other's download.
+    """
+    lock_dir = os.path.join(_CACHE_DIR, ".locks")
+    os.makedirs(lock_dir, exist_ok=True)
+    stripe = zlib.crc32(video_id.encode()) % _LOCK_STRIPES
+    lock_path = os.path.join(lock_dir, f"{stripe:02d}.lock")
     with open(lock_path, "a+", encoding="utf-8") as fh:
         try:
             import fcntl

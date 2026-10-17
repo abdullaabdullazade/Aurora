@@ -317,5 +317,25 @@ class SecurityTest(unittest.TestCase):
         self.assertEqual(client.get("/health").status_code, 200)
 
 
+class LockStripeTest(unittest.TestCase):
+    def test_lock_files_are_bounded(self) -> None:
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        original = main._CACHE_DIR
+        main._CACHE_DIR = work.name
+        self.addCleanup(setattr, main, "_CACHE_DIR", original)
+        legacy = os.path.join(work.name, ".abcdefghijk.lock")
+        open(legacy, "w").close()
+
+        main._remove_legacy_lock_files()
+        for i in range(300):
+            with main._cross_process_lock(f"video{i:06d}"):
+                pass
+
+        self.assertFalse(os.path.exists(legacy))
+        locks = os.listdir(os.path.join(work.name, ".locks"))
+        self.assertLessEqual(len(locks), main._LOCK_STRIPES)
+
+
 if __name__ == "__main__":
     unittest.main()
