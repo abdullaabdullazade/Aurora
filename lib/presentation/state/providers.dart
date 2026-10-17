@@ -5,6 +5,7 @@ import '../../data/repositories/api_music_repository.dart';
 import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/music_repository.dart';
+import '../../domain/services/recommendations.dart';
 import 'auth_controller.dart';
 import 'favorites_controller.dart';
 
@@ -36,28 +37,38 @@ final youtubeAccountApiProvider = Provider<YoutubeAccountApi>(
 final forYouProvider = FutureProvider<List<Track>>((ref) async {
   ref.watch(syncRevisionProvider);
   final repo = ref.watch(musicRepositoryProvider);
-  final stats = ref.read(listeningStatsProvider);
+  final stats = ref.read(listeningStatsProvider); // newest listen first
   final favorites = ref.read(favoritesProvider);
-  final recentIds =
-      ref.read(localStoreProvider).recents().map((t) => t.id).toSet();
+  final recents = ref.read(localStoreProvider).recents();
 
-  final artists = _topArtists(stats, favorites, count: 3);
-  if (artists.isEmpty) {
-    return _filterRecommendations(await repo.trending(), recentIds);
+  // A few songs that describe the listener's taste; YouTube's Mix for each
+  // brings the same artist and similar artists / genre (Ati242 -> Turkish
+  // rap, Eminem -> 50 Cent, Dr. Dre, …).
+  final ranked = [...stats]..sort((a, b) => b.count.compareTo(a.count));
+  final seeds = pickSeeds(
+    recent: [...recents, ...stats.map((s) => s.track)],
+    mostPlayed: ranked.map((s) => s.track).toList(),
+    liked: favorites,
+  );
+  if (seeds.isEmpty) {
+    final known = {for (final t in recents) t.id};
+    return _filterRecommendations(await repo.trending(), known);
   }
 
-  final merged = <Track>[];
-  final seen = <String>{};
-  for (final artist in artists) {
-    // One failed search should not blank the whole section.
-    final tracks = await repo
-        .searchTracks('$artist music', limit: 8)
-        .catchError((Object _) => const <Track>[]);
-    for (final track in tracks) {
-      if (seen.add(track.id)) merged.add(track);
-    }
-  }
-  return _filterRecommendations(merged, recentIds);
+  final mixes = await Future.wait(seeds.map((seed) => repo
+      .related(seed.id, limit: 30)
+      // One failed Mix should not blank the whole section.
+      .catchError((Object _) => const <Track>[])));
+  // Prefer songs the listener has not heard yet.
+  final known = {
+    for (final s in stats) s.track.id,
+    for (final t in recents) t.id,
+    for (final t in favorites) t.id,
+  };
+  final picks = blendRecommendations(mixes, exclude: known);
+  if (picks.length >= 8) return picks;
+  // Heavy listeners may know most of the Mix: allow known songs again.
+  return blendRecommendations(mixes, exclude: {for (final s in seeds) s.id});
 });
 
 /// For-you suggestions that are not already downloaded offline.
@@ -370,6 +381,27 @@ class CrossfadeSecondsController extends Notifier<int> {
 final crossfadeSecondsProvider =
     NotifierProvider<CrossfadeSecondsController, int>(
         CrossfadeSecondsController.new);
+
+/// When the queue runs out, keep playing similar songs (YouTube autoplay /
+/// Spotify radio). On by default.
+class AutoplaySimilarController extends Notifier<bool> {
+  static const _key = 'autoplay_similar';
+
+  @override
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key, fallback: true);
+  }
+
+  Future<void> set(bool value) async {
+    await ref.read(localStoreProvider).setFlag(_key, value);
+    state = value;
+  }
+}
+
+final autoplaySimilarProvider =
+    NotifierProvider<AutoplaySimilarController, bool>(
+        AutoplaySimilarController.new);
 
 /// Resume the last track and position after a cold start (paused).
 class ResumePlaybackController extends Notifier<bool> {

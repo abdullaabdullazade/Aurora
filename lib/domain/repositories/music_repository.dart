@@ -18,6 +18,10 @@ abstract interface class MusicRepository {
   /// Global chart tracks from a curated YouTube playlist.
   Future<List<Track>> topCharts();
 
+  /// Songs like [videoId] — YouTube's own Mix for it (same artist first,
+  /// then similar artists and genre).
+  Future<List<Track>> related(String videoId, {int limit = 25});
+
   /// Clears in-memory recommendation caches (trending / charts).
   void invalidateRecommendationCaches();
 

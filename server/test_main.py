@@ -389,5 +389,22 @@ class FlatExtractRetryTest(unittest.TestCase):
         self.assertEqual(len(self.calls), 4)
 
 
+class RelatedTest(unittest.TestCase):
+    def test_filters_seed_live_and_compilations(self) -> None:
+        info = {"entries": [
+            {"id": "seedseed123", "title": "seed", "duration": 200},
+            {"id": "okokokok123", "title": "song", "duration": 210},
+            {"id": "livelive123", "title": "live", "live_status": "is_live"},
+            {"id": "longlong123", "title": "1 hour mix", "duration": 3600},
+            {"id": "unknown1234", "title": "no duration"},
+        ]}
+        ids = [r["id"] for r in main._related_rows(info, "seedseed123")]
+        self.assertEqual(ids, ["okokokok123", "unknown1234"])
+
+    def test_rejects_bad_ids(self) -> None:
+        response = TestClient(main.app).get("/related", params={"v": "../x"})
+        self.assertEqual(response.status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()
