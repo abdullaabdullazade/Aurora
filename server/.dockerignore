@@ -10,3 +10,4 @@ venv/
 .last_url
 vercel.env
 cookies.txt
+proxies.txt
