@@ -22,6 +22,7 @@ import re
 import json
 import difflib
 import glob
+import hmac
 import logging
 import socket
 import sqlite3
@@ -51,7 +52,10 @@ async def verify_secret_key(request: Request, call_next):
     if expected_secret:
         if request.url.path != "/health":
             client_secret = request.headers.get("x-api-key") or request.query_params.get("key")
-            if client_secret != expected_secret:
+            # Constant-time: a plain != leaks how many leading bytes matched.
+            if not client_secret or not hmac.compare_digest(
+                client_secret.encode(), expected_secret.encode()
+            ):
                 from fastapi.responses import JSONResponse
                 return JSONResponse(
                     status_code=401,
@@ -270,6 +274,22 @@ def _warm_loop() -> None:
         time.sleep(120)
 
 
+class _YoutubeDL(yt_dlp.YoutubeDL):
+    """YoutubeDL that deletes its throwaway cookie copy when the block ends."""
+
+    _cookie_copy: str | None = None
+
+    def __exit__(self, *args: Any) -> None:
+        try:
+            super().__exit__(*args)
+        finally:
+            if self._cookie_copy:
+                try:
+                    os.remove(self._cookie_copy)
+                except OSError:
+                    pass
+
+
 def _ydl(opts: dict[str, Any], use_cookies: bool = True) -> yt_dlp.YoutubeDL:
     base = {
         "quiet": True,
@@ -280,6 +300,7 @@ def _ydl(opts: dict[str, Any], use_cookies: bool = True) -> yt_dlp.YoutubeDL:
     # Use cookies alongside the proxy (belt-and-suspenders): residential IP
     # bypasses the bot wall, the logged-in account unlocks higher-quality and
     # age/region-restricted formats.
+    cookie_copy: str | None = None
     if use_cookies:
         cf = _cookiefile()
         if cf:
@@ -295,8 +316,13 @@ def _ydl(opts: dict[str, Any], use_cookies: bool = True) -> yt_dlp.YoutubeDL:
                 base["cookiefile"] = tmp
             except Exception:  # noqa: BLE001
                 base["cookiefile"] = cf
+            # Each copy holds the account's YouTube session; never leave one
+            # behind in the temp dir.
+            cookie_copy = tmp
     base.update(opts)
-    return yt_dlp.YoutubeDL(base)
+    ydl = _YoutubeDL(base)
+    ydl._cookie_copy = cookie_copy
+    return ydl
 
 
 # Strip common YouTube title noise so lyric lookups match real songs.
@@ -792,12 +818,28 @@ def search(
     return rows[: max(1, min(limit, 50))]
 
 
+_PLAYLIST_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+    "youtu.be",
+}
+
+
 @app.get("/playlist")
 def playlist(url: str, limit: int = 100) -> dict[str, Any]:
     """Import a YouTube playlist / album / mix URL as a track list."""
+    # yt-dlp's generic extractor fetches any URL, which would let a client
+    # make this server request internal addresses (SSRF). YouTube only.
+    url = url.strip()
+    if "://" not in url:
+        url = f"https://{url}"  # pasted as "youtube.com/playlist?list=…"
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or (
+        (parts.hostname or "").lower() not in _PLAYLIST_HOSTS
+    ):
+        raise HTTPException(400, "only YouTube playlist links are supported")
     opts = _flat_opts()
     opts["noplaylist"] = False
-    opts["playlistend"] = limit
+    opts["playlistend"] = max(1, min(limit, 500))
     try:
         with _ydl(opts, use_cookies=True) as ydl:
             info = ydl.extract_info(url, download=False)
