@@ -1,8 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/db/local_store.dart';
+import '../../data/datasources/youtube_account_api.dart';
 import '../../data/repositories/api_music_repository.dart';
+import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/music_repository.dart';
+import 'auth_controller.dart';
+import 'favorites_controller.dart';
 
 /// Overridden in main() with the initialized instance.
 final localStoreProvider = Provider<LocalStore>(
@@ -21,6 +25,149 @@ final trendingProvider = FutureProvider<List<Track>>(
   (ref) => ref.watch(musicRepositoryProvider).trending(),
 );
 
+final youtubeAccountApiProvider = Provider<YoutubeAccountApi>(
+  (ref) => YoutubeAccountApi(),
+);
+
+/// Personalized picks from listening history, liked songs, or global trends.
+/// History is read, not watched: every started track updates stats and
+/// recents, and rebuilding here would re-run the searches and reshuffle the
+/// list under the user's finger. Pull-to-refresh and account sync rebuild it.
+final forYouProvider = FutureProvider<List<Track>>((ref) async {
+  ref.watch(syncRevisionProvider);
+  final repo = ref.watch(musicRepositoryProvider);
+  final stats = ref.read(listeningStatsProvider);
+  final favorites = ref.read(favoritesProvider);
+  final recentIds =
+      ref.read(localStoreProvider).recents().map((t) => t.id).toSet();
+
+  final artists = _topArtists(stats, favorites, count: 3);
+  if (artists.isEmpty) {
+    return _filterRecommendations(await repo.trending(), recentIds);
+  }
+
+  final merged = <Track>[];
+  final seen = <String>{};
+  for (final artist in artists) {
+    // One failed search should not blank the whole section.
+    final tracks = await repo
+        .searchTracks('$artist music', limit: 8)
+        .catchError((Object _) => const <Track>[]);
+    for (final track in tracks) {
+      if (seen.add(track.id)) merged.add(track);
+    }
+  }
+  return _filterRecommendations(merged, recentIds);
+});
+
+/// For-you suggestions that are not already downloaded offline.
+final quickDownloadsProvider = FutureProvider<List<Track>>((ref) async {
+  ref.watch(syncRevisionProvider);
+  final forYou = await ref.watch(forYouProvider.future);
+  final downloadedIds = ref
+      .watch(localStoreProvider)
+      .downloads()
+      .map((t) => t.id)
+      .toSet();
+  return forYou
+      .where((t) => !downloadedIds.contains(t.id))
+      .take(12)
+      .toList(growable: false);
+});
+
+/// Recent uploads from YouTube channels the user subscribes to.
+final fromYourChannelsProvider = FutureProvider<List<Track>>((ref) async {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return const [];
+
+  final token = await ref.read(authControllerProvider).youtubeAccessToken();
+  if (token == null) return const [];
+
+  return ref
+      .read(youtubeAccountApiProvider)
+      .fetchSubscriptionFeed(token, limit: 20);
+});
+
+/// Most played artists, or liked-song artists for a listener without stats.
+List<String> _topArtists(List<PlayStat> stats, List<Track> favorites,
+    {required int count}) {
+  final artistCounts = <String, int>{};
+  for (final row in stats) {
+    final artist = row.track.artist.trim();
+    if (artist.isEmpty || artist == 'Unknown') continue;
+    artistCounts[artist] = (artistCounts[artist] ?? 0) + row.count;
+  }
+  final ranked = artistCounts.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  final artists = ranked.take(count).map((e) => e.key).toList();
+  if (artists.isNotEmpty) return artists;
+  return favorites
+      .map((t) => t.artist.trim())
+      .where((a) => a.isNotEmpty && a != 'Unknown')
+      .toSet()
+      .take(count)
+      .toList();
+}
+
+const _globalPlaylistQueries = [
+  'top global hits playlist',
+  'viral hits playlist',
+  'best pop songs playlist',
+];
+
+/// YouTube playlists around the listener's top artists (global hits for a
+/// fresh install). Same read-not-watch rule as [forYouProvider].
+final playlistsForYouProvider = FutureProvider<List<Track>>((ref) async {
+  ref.watch(syncRevisionProvider);
+  final repo = ref.watch(musicRepositoryProvider);
+  final artists = _topArtists(
+    ref.read(listeningStatsProvider),
+    ref.read(favoritesProvider),
+    count: 4,
+  );
+  final queries = artists.isEmpty
+      ? _globalPlaylistQueries
+      : [for (final a in artists) '$a playlist'];
+  final openedUrls = ref
+      .read(localStoreProvider)
+      .recentPlaylists()
+      .map((p) => p.browseUrl)
+      .whereType<String>()
+      .toSet();
+
+  final results = await Future.wait(queries.map((q) => repo
+      .searchPlaylists(q, limit: 6)
+      .catchError((Object _) => const <Track>[])));
+
+  // Round-robin so one artist does not fill the whole row.
+  final out = <Track>[];
+  final seen = <String>{};
+  final longest =
+      results.fold<int>(0, (m, list) => list.length > m ? list.length : m);
+  for (var i = 0; i < longest && out.length < 12; i++) {
+    for (final list in results) {
+      if (i >= list.length || out.length >= 12) continue;
+      final p = list[i];
+      if (p.kind != TrackKind.playlist) continue;
+      if (openedUrls.contains(p.browseUrl)) continue;
+      if (seen.add(p.id)) out.add(p);
+    }
+  }
+  return out;
+});
+
+List<Track> _filterRecommendations(List<Track> tracks, Set<String> excludeIds,
+    {int limit = 24}) {
+  final out = <Track>[];
+  final seen = <String>{};
+  for (final track in tracks) {
+    if (excludeIds.contains(track.id)) continue;
+    if (seen.add(track.id)) out.add(track);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 final recentlyPlayedProvider = FutureProvider<List<Track>>(
   (ref) {
     ref.watch(syncRevisionProvider);
@@ -28,8 +175,14 @@ final recentlyPlayedProvider = FutureProvider<List<Track>>(
   },
 );
 
+/// Up to 4 MRU playlists for the Home quick-access grid.
+final recentPlaylistsProvider = Provider<List<RecentPlaylist>>((ref) {
+  ref.watch(syncRevisionProvider);
+  return ref.watch(localStoreProvider).recentPlaylists();
+});
+
 final topChartsProvider = FutureProvider<List<Track>>(
-  (ref) => ref.watch(musicRepositoryProvider).search('top charts this week'),
+  (ref) => ref.watch(musicRepositoryProvider).topCharts(),
 );
 
 /// Tracks for an artist (real artist APIs aren't available client-side, so we
@@ -58,10 +211,14 @@ final libraryTabProvider = StateProvider<int>((ref) => 0);
 // --- Search (debounced in the UI) ---------------------------------------
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
+/// Active search chip: tracks | playlists | albums | podcasts.
+final searchFilterProvider = StateProvider<String>((ref) => 'tracks');
+
 final searchResultsProvider = FutureProvider<List<Track>>((ref) async {
   final q = ref.watch(searchQueryProvider);
+  final filter = ref.watch(searchFilterProvider);
   if (q.trim().isEmpty) return const [];
-  return ref.watch(musicRepositoryProvider).search(q);
+  return ref.watch(musicRepositoryProvider).search(q, filter: filter);
 });
 
 /// Autocomplete for the current query. Separate from [searchResultsProvider]
@@ -115,6 +272,26 @@ final autoDownloadFavoritesProvider =
     NotifierProvider<AutoDownloadFavoritesController, bool>(
         AutoDownloadFavoritesController.new);
 
+/// When on, new downloads start only on Wi-Fi (default off).
+class WifiOnlyDownloadsController extends Notifier<bool> {
+  static const _key = 'wifi_only_downloads';
+
+  @override
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key);
+  }
+
+  Future<void> set(bool value) async {
+    await ref.read(localStoreProvider).setFlag(_key, value);
+    state = value;
+  }
+}
+
+final wifiOnlyDownloadsProvider =
+    NotifierProvider<WifiOnlyDownloadsController, bool>(
+        WifiOnlyDownloadsController.new);
+
 /// Fade the outgoing track out while the next one fades in.
 class CrossfadeController extends Notifier<bool> {
   static const _key = 'crossfade';
@@ -154,3 +331,25 @@ class CrossfadeSecondsController extends Notifier<int> {
 final crossfadeSecondsProvider =
     NotifierProvider<CrossfadeSecondsController, int>(
         CrossfadeSecondsController.new);
+
+/// Resume the last track and position after a cold start (paused).
+class ResumePlaybackController extends Notifier<bool> {
+  static const _key = 'resume_playback';
+
+  @override
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key, fallback: true);
+  }
+
+  Future<void> set(bool value) async {
+    final store = ref.read(localStoreProvider);
+    await store.setFlag(_key, value);
+    if (!value) await store.clearPlaybackSession();
+    state = value;
+  }
+}
+
+final resumePlaybackProvider =
+    NotifierProvider<ResumePlaybackController, bool>(
+        ResumePlaybackController.new);

@@ -5,25 +5,32 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/ringtone/ringtone_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/download_controller.dart';
+import '../../state/player_controller.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/glass.dart';
 import '../album/album_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
+import '../player/sleep_timer_sheet.dart';
 import 'add_to_playlist_sheet.dart';
 
 /// Long-press menu for a track: artist / album / playlist / share.
 class TrackContextSheet extends ConsumerWidget {
   final Track track;
-  const TrackContextSheet({super.key, required this.track});
+  final bool showSleepTimer;
+  const TrackContextSheet(
+      {super.key, required this.track, this.showSleepTimer = false});
 
-  static Future<void> show(BuildContext context, Track track) =>
+  static Future<void> show(BuildContext context, Track track,
+          {bool showSleepTimer = false}) =>
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
-        builder: (_) => TrackContextSheet(track: track),
+        builder: (_) => TrackContextSheet(
+            track: track, showSleepTimer: showSleepTimer),
       );
 
   Future<void> _share() async {
@@ -74,6 +81,17 @@ class TrackContextSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
+    final remaining = showSleepTimer
+        ? ref.watch(
+            playerControllerProvider.select((s) => s.sleepRemaining))
+        : null;
+    final atTrackEnd = showSleepTimer &&
+        ref.watch(
+            playerControllerProvider.select((s) => s.sleepAtTrackEnd));
+    final sleepActive = remaining != null || atTrackEnd;
+    final sleepSubtitle = atTrackEnd
+        ? 'End of track'
+        : (remaining != null ? Fmt.duration(remaining) : null);
     return Glass(
       radius: const BorderRadius.vertical(top: Radii.xl),
       blur: 30,
@@ -113,6 +131,21 @@ class TrackContextSheet extends ConsumerWidget {
                 ],
               ),
             ),
+            if (showSleepTimer) ...[
+              _Item(
+                icon: sleepActive
+                    ? Icons.bedtime_rounded
+                    : Icons.bedtime_outlined,
+                label: 'Sleep timer',
+                subtitle: sleepSubtitle,
+                subtitleAccent: sleepActive,
+                onTap: () {
+                  Navigator.pop(context);
+                  SleepTimerSheet.show(context);
+                },
+              ),
+              const Divider(height: 1, color: AppColors.glassStroke),
+            ],
             if (track.localPath == null)
               _Item(
                 icon: Icons.download_rounded,
@@ -203,14 +236,29 @@ class TrackContextSheet extends ConsumerWidget {
 class _Item extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? subtitle;
+  final bool subtitleAccent;
   final VoidCallback onTap;
-  const _Item(
-      {required this.icon, required this.label, required this.onTap});
+  const _Item({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+    this.subtitleAccent = false,
+  });
   @override
   Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
     return ListTile(
       leading: Icon(icon, color: AppColors.textPrimary),
-      title: Text(label, style: Theme.of(context).textTheme.titleMedium),
+      title: Text(label, style: text.titleMedium),
+      subtitle: subtitle != null
+          ? Text(subtitle!,
+              style: text.bodyMedium?.copyWith(
+                  color: subtitleAccent
+                      ? AppColors.accentBright
+                      : AppColors.textSecondary))
+          : null,
       onTap: onTap,
     );
   }

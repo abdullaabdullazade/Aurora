@@ -24,7 +24,8 @@ class ArtistDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tracks = ref.watch(artistTracksProvider(artist));
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -120,7 +121,7 @@ class ArtistDetailScreen extends ConsumerWidget {
                         child: Text('Couldn’t load', style: text.bodyMedium)))),
             data: (list) => _Body(
               list: list,
-              playingId: playing?.id,
+              playingId: playingId,
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 180)),

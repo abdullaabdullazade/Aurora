@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -6,6 +7,7 @@ import '../../core/config/app_config.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
+import 'connectivity_controller.dart';
 import 'providers.dart';
 
 typedef DownloadJob = ({Track track, double progress, bool paused});
@@ -27,10 +29,26 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
       ..onDownloadCancel = cancel
       ..onDownloadPause = pause
       ..onDownloadResume = resume;
+    // If Wi-Fi-only is on and the radio drops, pause active transfers.
+    ref.listen<AsyncValue<bool>>(wifiConnectivityProvider, (prev, next) {
+      final onWifi = next.valueOrNull;
+      if (onWifi == false && ref.read(wifiOnlyDownloadsProvider)) {
+        for (final id in state.keys.toList()) {
+          final job = state[id];
+          if (job != null && !job.paused) pause(id);
+        }
+      }
+    });
     return {};
   }
 
   bool isDownloading(String id) => state.containsKey(id);
+
+  Future<bool> _wifiAllowed() async {
+    if (!ref.read(wifiOnlyDownloadsProvider)) return true;
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.wifi);
+  }
 
   Future<String> _filePath(String id) async {
     final dir = await getApplicationDocumentsDirectory();
@@ -41,6 +59,14 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
 
   Future<void> download(Track track) async {
     if (track.localPath != null || state.containsKey(track.id)) return;
+    if (!await _wifiAllowed()) {
+      NotificationService.instance.showDownloadError(
+        track.id,
+        track.title,
+        headline: 'Wi‑Fi required',
+      );
+      return;
+    }
     state = {...state, track.id: (track: track, progress: 0.0, paused: false)};
     await _run(track);
   }
@@ -63,6 +89,14 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
   Future<void> resume(String id) async {
     final job = state[id];
     if (job == null || !job.paused) return;
+    if (!await _wifiAllowed()) {
+      NotificationService.instance.showDownloadError(
+        id,
+        job.track.title,
+        headline: 'Wi‑Fi required',
+      );
+      return;
+    }
     state = {
       ...state,
       id: (track: job.track, progress: job.progress, paused: false)

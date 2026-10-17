@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../domain/entities/track.dart';
 import '../../state/player_controller.dart';
 import '../../widgets/track_tile.dart';
+import '../search/playlist_browse_screen.dart';
 
 /// Full vertical list behind a carousel's "See all".
 class SeeAllScreen extends ConsumerWidget {
@@ -13,7 +14,8 @@ class SeeAllScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     return Scaffold(
       backgroundColor: AppColors.voidBlack,
       appBar: AppBar(
@@ -26,10 +28,14 @@ class SeeAllScreen extends ConsumerWidget {
         itemCount: tracks.length,
         itemBuilder: (_, i) => TrackTile(
           track: tracks[i],
-          active: playing?.id == tracks[i].id,
-          onTap: () => ref
-              .read(playerControllerProvider.notifier)
-              .playQueue(tracks, startAt: i),
+          active: playingId == tracks[i].id,
+          onTap: () => tracks[i].isCollection
+              ? Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PlaylistBrowseScreen(seed: tracks[i]),
+                ))
+              : ref
+                  .read(playerControllerProvider.notifier)
+                  .playQueue(tracks, startAt: i),
         ),
       ),
     );

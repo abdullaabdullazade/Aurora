@@ -32,6 +32,22 @@ abstract final class AppConfig {
   static const String apiSecretKey =
       String.fromEnvironment('AURORA_SECRET_KEY', defaultValue: '');
 
+  /// Firebase Google Sign-In Web client ID (OAuth client_type 3).
+  /// Firebase Console → Authentication → Sign-in method → Google → Web client ID.
+  static const String googleWebClientId = String.fromEnvironment(
+    'AURORA_GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '',
+  );
+
+  /// YouTube playlist ID for the Top Charts carousel (Global Top Songs).
+  static const String topChartsPlaylistId = String.fromEnvironment(
+    'AURORA_TOP_CHARTS_PLAYLIST',
+    defaultValue: 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
+  );
+
+  static const String youtubeReadonlyScope =
+      'https://www.googleapis.com/auth/youtube.readonly';
+
   /// Resolver server base URL. Overridden at launch from [registryUrl] when
   /// reachable; otherwise this LAN fallback is used.
   ///

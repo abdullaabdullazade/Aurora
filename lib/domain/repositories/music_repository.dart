@@ -6,7 +6,20 @@ abstract interface class MusicRepository {
   /// Online search (YouTube Music style). [filter] e.g. tracks/videos/albums.
   Future<List<Track>> search(String query, {String filter = 'tracks'});
 
-  Future<List<Track>> trending();
+  Future<List<Track>> trending({bool refresh = false});
+
+  /// Resolver search without extra query shaping.
+  Future<List<Track>> searchTracks(String query, {int limit = 25});
+
+  /// YouTube playlist search for Home recommendations (cached like
+  /// [searchTracks]).
+  Future<List<Track>> searchPlaylists(String query, {int limit = 10});
+
+  /// Global chart tracks from a curated YouTube playlist.
+  Future<List<Track>> topCharts();
+
+  /// Clears in-memory recommendation caches (trending / charts).
+  void invalidateRecommendationCaches();
 
   Future<List<Track>> recentlyPlayed();
 

@@ -17,7 +17,8 @@ class FolderSongsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final folders = ref.watch(musicFoldersProvider).valueOrNull ?? const [];
     final folder = folders.where((f) => f.path == folderPath).firstOrNull;
-    final playing = ref.watch(playerControllerProvider).current;
+    final playingId =
+        ref.watch(playerControllerProvider.select((s) => s.current?.id));
     final text = Theme.of(context).textTheme;
 
     if (folder == null) {
@@ -67,7 +68,7 @@ class FolderSongsScreen extends ConsumerWidget {
             itemCount: tracks.length,
             itemBuilder: (_, i) => TrackTile(
               track: tracks[i],
-              active: playing?.id == tracks[i].id,
+              active: playingId == tracks[i].id,
               onTap: () => ref
                   .read(playerControllerProvider.notifier)
                   .playQueue(tracks, startAt: i),

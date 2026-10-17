@@ -84,12 +84,18 @@ class _TrackCardState extends ConsumerState<TrackCard> {
               const SizedBox(height: 3),
               Row(
                 children: [
-                  const Icon(Icons.headphones_rounded,
-                      size: 12, color: AppColors.textTertiary),
+                  Icon(
+                      widget.track.isCollection
+                          ? Icons.queue_music_rounded
+                          : Icons.headphones_rounded,
+                      size: 12,
+                      color: AppColors.textTertiary),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      '${widget.track.artist} · ${Fmt.compact(widget.track.plays)}',
+                      widget.track.plays > 0
+                          ? '${widget.track.artist} · ${Fmt.compact(widget.track.plays)}'
+                          : widget.track.artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: text.bodyMedium

@@ -16,11 +16,42 @@ class MockMusicRepository implements MusicRepository {
             t.title.toLowerCase().contains(q) ||
             t.artist.toLowerCase().contains(q))
         .toList();
-    return _delayed(q.isEmpty ? MockTracks.all : hits, 400);
+    final base = q.isEmpty ? MockTracks.all : hits;
+    if (filter == 'tracks') return _delayed(base, 400);
+    // Fake a couple of collection hits for UI preview.
+    return _delayed(
+      base
+          .take(3)
+          .map((t) => t.copyWith(
+                kind: switch (filter) {
+                  'albums' => TrackKind.album,
+                  'podcasts' => TrackKind.podcast,
+                  _ => TrackKind.playlist,
+                },
+                browseUrl: 'https://www.youtube.com/playlist?list=${t.id}',
+              ))
+          .toList(),
+      400,
+    );
   }
 
   @override
-  Future<List<Track>> trending() => _delayed(MockTracks.trending);
+  Future<List<Track>> trending({bool refresh = false}) =>
+      _delayed(MockTracks.trending);
+
+  @override
+  Future<List<Track>> searchTracks(String query, {int limit = 25}) =>
+      search(query);
+
+  @override
+  Future<List<Track>> searchPlaylists(String query, {int limit = 10}) =>
+      search(query, filter: 'playlists');
+
+  @override
+  Future<List<Track>> topCharts() => _delayed(MockTracks.trending);
+
+  @override
+  void invalidateRecommendationCaches() {}
 
   @override
   Future<List<Track>> recentlyPlayed() => _delayed(MockTracks.recent);

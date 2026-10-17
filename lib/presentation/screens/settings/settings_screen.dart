@@ -6,9 +6,11 @@ import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../state/favorites_controller.dart';
+import '../../state/player_controller.dart';
 import '../../state/providers.dart';
 import '../../state/settings_controller.dart';
 import '../../state/auth_controller.dart';
+import '../../../core/db/sync_service.dart';
 import 'equalizer_screen.dart';
 import 'stats_screen.dart';
 
@@ -20,6 +22,7 @@ class SettingsScreen extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider);
     final crossfade = ref.watch(crossfadeProvider);
     final seconds = ref.watch(crossfadeSecondsProvider);
+    final resumePlayback = ref.watch(resumePlaybackProvider);
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -82,6 +85,16 @@ class SettingsScreen extends ConsumerWidget {
                     ref.read(crossfadeSecondsProvider.notifier).set(v.round()),
               ),
             ),
+          _Switch(
+            icon: Icons.history_rounded,
+            title: 'Remember playback position',
+            subtitle: resumePlayback
+                ? 'Resume where you left off when reopening the app'
+                : 'Always start tracks from the beginning',
+            value: resumePlayback,
+            onChanged: (v) =>
+                ref.read(resumePlaybackProvider.notifier).set(v),
+          ),
           const SizedBox(height: Sp.xl),
           Text('Library', style: text.labelLarge),
           const SizedBox(height: Sp.sm),
@@ -98,6 +111,16 @@ class SettingsScreen extends ConsumerWidget {
                 await ref.read(favoritesProvider.notifier).downloadAllLiked();
               }
             },
+          ),
+          _Switch(
+            icon: Icons.wifi_rounded,
+            title: 'Download over Wi‑Fi only',
+            subtitle: ref.watch(wifiOnlyDownloadsProvider)
+                ? 'Downloads wait until you are on Wi‑Fi'
+                : 'Downloads may use mobile data',
+            value: ref.watch(wifiOnlyDownloadsProvider),
+            onChanged: (v) =>
+                ref.read(wifiOnlyDownloadsProvider.notifier).set(v),
           ),
           _Tile(
             icon: Icons.insights_rounded,
@@ -122,12 +145,51 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _openExternalLink(context, AppConfig.repositoryUrl),
           ),
           const SizedBox(height: Sp.xl),
+          Text('Notifications', style: text.labelLarge),
+          const SizedBox(height: Sp.sm),
+          ..._notificationItems(ref).map(
+            (item) => _InfoTile(
+              icon: item.$1,
+              title: item.$2,
+              subtitle: item.$3,
+            ),
+          ),
+          const SizedBox(height: Sp.xl),
           Center(
             child: Text('Aurora Music · v1.0', style: text.labelSmall),
           ),
         ],
       ),
     );
+  }
+
+  List<(IconData, String, String)> _notificationItems(WidgetRef ref) {
+    final recents = ref.watch(recentlyPlayedProvider).valueOrNull ?? const [];
+    final likedCount = ref.watch(favoritesProvider).length;
+    return [
+      if (recents.isNotEmpty)
+        (
+          Icons.history_rounded,
+          'Continue listening',
+          'Pick up “${recents.first.title}”'
+        ),
+      if (likedCount > 0)
+        (
+          Icons.favorite_rounded,
+          'Liked Songs',
+          'You have $likedCount liked ${likedCount == 1 ? 'song' : 'songs'}'
+        ),
+      (
+        Icons.local_fire_department_rounded,
+        'Top Charts',
+        'See what’s trending today'
+      ),
+      (
+        Icons.bedtime_rounded,
+        'Daily reminders on',
+        'Mix at 12:30 · wind-down at 20:00'
+      ),
+    ];
   }
 
   Future<void> _openExternalLink(BuildContext context, String url) async {
@@ -205,6 +267,32 @@ class _Tile extends StatelessWidget {
   }
 }
 
+/// Same visual language as [_Tile], without navigation (status / reminder rows).
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  const _InfoTile(
+      {required this.icon, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+            borderRadius: Radii.rSm, gradient: AppColors.accentSweep),
+        child: Icon(icon, color: Colors.black),
+      ),
+      title: Text(title, style: text.titleMedium),
+      subtitle: Text(subtitle, style: text.bodyMedium),
+    );
+  }
+}
+
 class _AccountSection extends ConsumerWidget {
   const _AccountSection();
 
@@ -236,7 +324,13 @@ class _AccountSection extends ConsumerWidget {
                     style: text.bodyMedium),
                 onTap: () async {
                   try {
-                    await authController.signInWithGoogle();
+                    final user = await authController.signInWithGoogle();
+                    if (!context.mounted) return;
+                    if (user == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Sign-in cancelled')),
+                      );
+                    }
                   } catch (error) {
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -269,7 +363,24 @@ class _AccountSection extends ConsumerWidget {
               subtitle: Text(user.email ?? '', style: text.bodyMedium),
               trailing: IconButton(
                 icon: const Icon(Icons.logout_rounded),
-                onPressed: () => authController.signOut(),
+                onPressed: () async {
+                  final sync = ref.read(syncServiceProvider);
+                  final messenger = ScaffoldMessenger.of(context);
+                  // Signing out wipes this account's local data, so it must
+                  // reach the server first; otherwise offline changes are lost.
+                  if (!await sync.flushSnapshot()) {
+                    messenger.showSnackBar(const SnackBar(
+                      content: Text('Could not back up your library. '
+                          'Check your connection and try again.'),
+                    ));
+                    return;
+                  }
+                  // The queue may hold this account's downloads, which are
+                  // deleted below; the next user must not inherit it.
+                  await ref.read(playerControllerProvider.notifier).close();
+                  await authController.signOut();
+                  await sync.onSignedOut();
+                },
               ),
             );
           },

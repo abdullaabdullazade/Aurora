@@ -72,6 +72,41 @@ class JustAudioBackground {
       androidBrowsableRootExtras: androidBrowsableRootExtras,
     );
   }
+
+  /// Lets an app that keeps its own queue (and hands just_audio one item at a
+  /// time) drive the notification / lock screen / headset skip buttons.
+  /// While set, skip requests go to [onNext] / [onPrevious] instead of the
+  /// just_audio sequence.
+  static void setQueueControls({
+    required bool hasPrevious,
+    required bool hasNext,
+    required Future<void> Function() onNext,
+    required Future<void> Function() onPrevious,
+  }) {
+    _playerAudioHandler.setQueueControls(_QueueControls(
+      hasPrevious: hasPrevious,
+      hasNext: hasNext,
+      onNext: onNext,
+      onPrevious: onPrevious,
+    ));
+  }
+
+  static void clearQueueControls() =>
+      _playerAudioHandler.setQueueControls(null);
+}
+
+class _QueueControls {
+  final bool hasPrevious;
+  final bool hasNext;
+  final Future<void> Function() onNext;
+  final Future<void> Function() onPrevious;
+
+  const _QueueControls({
+    required this.hasPrevious,
+    required this.hasNext,
+    required this.onNext,
+    required this.onPrevious,
+  });
 }
 
 class _JustAudioBackgroundPlugin extends JustAudioPlatform {
@@ -368,6 +403,16 @@ class _PlayerAudioHandler extends BaseAudioHandler
   List<int> _shuffleIndicesInv = [];
   List<int> _effectiveIndices = [];
   List<int> _effectiveIndicesInv = [];
+  _QueueControls? _queueControls;
+
+  void setQueueControls(_QueueControls? controls) {
+    final old = _queueControls;
+    _queueControls = controls;
+    if (old?.hasNext != controls?.hasNext ||
+        old?.hasPrevious != controls?.hasPrevious) {
+      _broadcastState();
+    }
+  }
 
   Future<AudioPlayerPlatform> get _player => _playerCompleter.future;
   int? index;
@@ -539,10 +584,30 @@ class _PlayerAudioHandler extends BaseAudioHandler
           AndroidEqualizerBandSetGainRequest request) async =>
       await (await _player).androidEqualizerBandSetGain(request);
 
+  /// The native Equalizer only exists once ExoPlayer has an audio session id,
+  /// which a fresh player may not have yet. just_audio awaits this call while
+  /// activating the platform, and a throw there leaves setAudioSource pending
+  /// forever, so retry briefly and then report an empty band list instead.
   Future<AndroidEqualizerGetParametersResponse>
       customAndroidEqualizerGetParameters(
-              AndroidEqualizerGetParametersRequest request) async =>
-          await (await _player).androidEqualizerGetParameters(request);
+          AndroidEqualizerGetParametersRequest request) async {
+    final player = await _player;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await player.androidEqualizerGetParameters(request);
+      } catch (e) {
+        debugPrint('[player] equalizer not ready (${attempt + 1}/5): $e');
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+    }
+    return AndroidEqualizerGetParametersResponse(
+      parameters: AndroidEqualizerParametersMessage(
+        minDecibels: 0,
+        maxDecibels: 0,
+        bands: const [],
+      ),
+    );
+  }
 
   Future<AndroidLoudnessEnhancerSetTargetGainResponse>
       customAndroidLoudnessEnhancerSetTargetGain(
@@ -623,6 +688,11 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToNext() async {
+    final external = _queueControls;
+    if (external != null) {
+      if (external.hasNext) await external.onNext();
+      return;
+    }
     if (hasNext) {
       await skipToQueueItem(nextIndex!);
     }
@@ -630,6 +700,11 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToPrevious() async {
+    final external = _queueControls;
+    if (external != null) {
+      if (external.hasPrevious) await external.onPrevious();
+      return;
+    }
     if (hasPrevious) {
       await skipToQueueItem(previousIndex!);
     }
@@ -637,15 +712,19 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> play() async {
+    // After EOS, restart from the start of the *current* item. skipToQueueItem(0)
+    // was wrong once Dart had already replaced the source for the next track.
     if (_justAudioEvent.processingState == ProcessingStateMessage.completed) {
-      await skipToQueueItem(0);
+      await (await _player)
+          .seek(SeekRequest(position: Duration.zero, index: null));
     }
-    if (!_playing) {
-      _updatePosition();
-      customEvent.add(_PlayingEvent(_playing = true));
-      _broadcastState();
-      await (await _player).play(PlayRequest());
-    }
+    // Always send PlayRequest. After EOS the native player is stopped but
+    // `_playing` can still be true, so skipping here left the next track
+    // loaded and paused until the user tapped Play.
+    _updatePosition();
+    customEvent.add(_PlayingEvent(_playing = true));
+    _broadcastState();
+    await (await _player).play(PlayRequest());
   }
 
   @override
@@ -656,11 +735,15 @@ class _PlayerAudioHandler extends BaseAudioHandler
     await (await _player).pause(PauseRequest());
   }
 
+  /// Also forwards the refreshed event to the Dart AudioPlayer: it
+  /// extrapolates position from the last event's updateTime, so a stale one
+  /// makes its position run ahead after play/pause from the notification.
   void _updatePosition() {
     _justAudioEvent = _justAudioEvent.copyWith(
       updatePosition: currentPosition,
       updateTime: DateTime.now(),
     );
+    customEvent.add(_justAudioEvent);
   }
 
   @override
@@ -765,10 +848,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   /// Broadcasts the current state to all clients.
   void _broadcastState() {
+    final external = _queueControls;
+    final showPrevious = external?.hasPrevious ?? hasPrevious;
+    final showNext = external?.hasNext ?? hasNext;
     final controls = [
-      if (hasPrevious) MediaControl.skipToPrevious,
+      if (showPrevious) MediaControl.skipToPrevious,
       if (_playing) MediaControl.pause else MediaControl.play,
-      if (hasNext) MediaControl.skipToNext,
+      if (showNext) MediaControl.skipToNext,
     ];
     playbackState.add(playbackState.nvalue!.copyWith(
       controls: controls,

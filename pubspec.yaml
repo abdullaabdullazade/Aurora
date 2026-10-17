@@ -61,6 +61,7 @@ dependencies:
   scrollable_positioned_list: ^0.3.8 # exact line-index jump for synced lyrics
   google_fonts: ^6.2.1
   palette_generator: ^0.3.3+5 # dominant-color extraction for ambient bg
+  wakelock_plus: ^1.2.8 # keep screen on while Lyrics sheet is open
 
 
 # path_provider_android >=2.3 pulls `jni`, which forces a native CMake/NDK
