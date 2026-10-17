@@ -36,6 +36,9 @@ final youtubeAccountApiProvider = Provider<YoutubeAccountApi>(
 /// list under the user's finger. Pull-to-refresh and account sync rebuild it.
 final forYouProvider = FutureProvider<List<Track>>((ref) async {
   ref.watch(syncRevisionProvider);
+  // The one history change worth a rebuild: the first listen, which turns
+  // the generic trending fallback into personal picks right away.
+  ref.watch(listeningStatsProvider.select((s) => s.isNotEmpty));
   final repo = ref.watch(musicRepositoryProvider);
   final stats = ref.read(listeningStatsProvider); // newest listen first
   final favorites = ref.read(favoritesProvider);
