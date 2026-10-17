@@ -20,6 +20,9 @@ class TrackTile extends ConsumerWidget {
   final Widget? trailing;
   final Widget? leading;
 
+  /// Replaces the default long-press menu (e.g. to add playlist actions).
+  final VoidCallback? onLongPress;
+
   const TrackTile({
     super.key,
     required this.track,
@@ -27,6 +30,7 @@ class TrackTile extends ConsumerWidget {
     this.active = false,
     this.trailing,
     this.leading,
+    this.onLongPress,
   });
 
   @override
@@ -48,7 +52,11 @@ class TrackTile extends ConsumerWidget {
         },
         onLongPress: () {
           HapticFeedback.mediumImpact();
-          TrackContextSheet.show(context, track);
+          if (onLongPress != null) {
+            onLongPress!();
+          } else {
+            TrackContextSheet.show(context, track);
+          }
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(

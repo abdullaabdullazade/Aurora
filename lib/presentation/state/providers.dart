@@ -252,6 +252,45 @@ final listeningStatsProvider = Provider<List<PlayStat>>((ref) {
   }).toList();
 });
 
+/// Spotify "On Repeat"-style list: tracks played at least twice, most plays
+/// first (listening time breaks ties). Stats are part of the account sync
+/// snapshot, so every signed-in device ranks the same tracks.
+const mostPlayedLimit = 25;
+
+final mostPlayedProvider = Provider<List<PlayStat>>((ref) {
+  final ranked = ref
+      .watch(listeningStatsProvider)
+      .where((s) => s.count >= 2)
+      .toList()
+    ..sort((a, b) {
+      final byCount = b.count.compareTo(a.count);
+      return byCount != 0
+          ? byCount
+          : b.secondsPlayed.compareTo(a.secondsPlayed);
+    });
+  return ranked.take(mostPlayedLimit).toList(growable: false);
+});
+
+/// Keep the Most played list downloaded (on by default, Wi-Fi only).
+class OfflineMostPlayedController extends Notifier<bool> {
+  static const _key = 'offline_most_played';
+
+  @override
+  bool build() {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(localStoreProvider).flag(_key, fallback: true);
+  }
+
+  Future<void> set(bool value) async {
+    await ref.read(localStoreProvider).setFlag(_key, value);
+    state = value;
+  }
+}
+
+final offlineMostPlayedProvider =
+    NotifierProvider<OfflineMostPlayedController, bool>(
+        OfflineMostPlayedController.new);
+
 /// Keep every liked song available offline, downloading in the background.
 class AutoDownloadFavoritesController extends Notifier<bool> {
   static const _key = 'auto_download_favorites';

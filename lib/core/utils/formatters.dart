@@ -24,4 +24,11 @@ abstract final class Fmt {
     if (b >= 1 << 10) return '${(b / (1 << 10)).toStringAsFixed(0)} KB';
     return '$b B';
   }
+
+  /// Listening time: minutes below an hour ("0.3 h" tells a new user
+  /// nothing), then hours. 1500 -> "25 min", 5400 -> "1.5 h"
+  static String listened(int seconds) {
+    if (seconds < 3600) return '${(seconds / 60).floor()} min';
+    return '${(seconds / 3600).toStringAsFixed(1)} h';
+  }
 }

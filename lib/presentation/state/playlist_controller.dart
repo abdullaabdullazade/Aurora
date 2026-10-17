@@ -53,6 +53,16 @@ class PlaylistController extends Notifier<List<Playlist>> {
     });
   }
 
+  /// Puts a removed track back where it was (undo).
+  Future<void> insertTrack(String id, Track track, int index) async {
+    await _update(id, (p) {
+      if (p.tracks.any((t) => t.id == track.id)) return p;
+      final tracks = [...p.tracks]
+        ..insert(index.clamp(0, p.tracks.length), track);
+      return p.copyWith(tracks: tracks);
+    });
+  }
+
   Future<void> removeTrack(String id, String trackId) async {
     await _update(
         id,

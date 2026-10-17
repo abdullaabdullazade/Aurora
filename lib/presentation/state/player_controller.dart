@@ -858,6 +858,12 @@ class PlayerController extends Notifier<PlayerState> {
     if (_isMediaStoreId(track.id)) {
       return Uri.parse('content://media/external/audio/media/${track.id}');
     }
+    if (track.localPath == null) {
+      // Lists built from stats, search or recents carry no path even when
+      // the track is downloaded; play the offline copy when there is one.
+      final saved = ref.read(localStoreProvider).downloadPath(track.id);
+      if (saved != null && await File(saved).exists()) return Uri.file(saved);
+    }
     if (track.localPath != null) {
       final path = track.localPath!;
       if (path.startsWith('content://')) return Uri.parse(path);

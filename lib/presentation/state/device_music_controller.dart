@@ -2,6 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/track.dart';
+import 'favorites_controller.dart';
+import 'player_controller.dart';
+import 'playlist_controller.dart';
 import 'providers.dart';
 
 // Native MediaStore scan (Kotlin) — stable, off the UI thread. Replaces
@@ -143,3 +146,52 @@ class HiddenFoldersController extends Notifier<Set<String>> {
 final hiddenFoldersProvider =
     NotifierProvider<HiddenFoldersController, Set<String>>(
         HiddenFoldersController.new);
+
+/// Permanently deletes device songs (file + MediaStore row) after Android's
+/// own confirmation dialog, then drops them from Liked Songs, playlists,
+/// recents and stats so nothing points at a missing file. Returns false when
+/// the user declined; throws [PlatformException] when Android refused.
+///
+/// Takes the [ProviderContainer] rather than a widget ref because the menu
+/// that starts it closes while the system dialog is up.
+Future<bool> deleteDeviceSongs(
+    ProviderContainer ref, List<Track> tracks) async {
+  if (tracks.isEmpty) return false;
+  // Android 9 and older need WRITE_EXTERNAL_STORAGE; newer versions answer
+  // this without a dialog and ask in the system delete prompt instead.
+  try {
+    await Permission.storage.request();
+  } catch (_) {}
+  final ok = await _mediaCh.invokeMethod<bool>(
+        'deleteSongs',
+        {'ids': [for (final t in tracks) t.id]},
+      ) ??
+      false;
+  if (!ok) return false;
+
+  final ids = {for (final t in tracks) t.id};
+  final player = ref.read(playerControllerProvider.notifier);
+  final playerState = ref.read(playerControllerProvider);
+  if (ids.contains(playerState.current?.id)) {
+    playerState.queue.length > 1 ? await player.next() : await player.close();
+  }
+
+  final favorites = ref.read(favoritesProvider.notifier);
+  for (final t in ref.read(favoritesProvider)) {
+    if (ids.contains(t.id)) await favorites.toggle(t);
+  }
+  final playlists = ref.read(playlistsProvider.notifier);
+  for (final p in ref.read(playlistsProvider)) {
+    for (final t in p.tracks) {
+      if (ids.contains(t.id)) await playlists.removeTrack(p.id, t.id);
+    }
+  }
+  final store = ref.read(localStoreProvider);
+  for (final id in ids) {
+    await store.forgetTrackHistory(id);
+  }
+  ref.invalidate(listeningStatsProvider);
+  ref.invalidate(recentlyPlayedProvider);
+  ref.invalidate(deviceSongsProvider);
+  return true;
+}

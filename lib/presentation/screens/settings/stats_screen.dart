@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/dynamic_palette.dart';
+import '../../../core/utils/formatters.dart';
 import '../../state/player_controller.dart';
 import '../../state/providers.dart';
 import '../../widgets/artwork.dart';
@@ -122,11 +123,7 @@ class StatsScreen extends ConsumerWidget {
     );
   }
 
-  /// Minutes below an hour — "0.3 h listened" tells a new user nothing.
-  static String _hours(int seconds) {
-    if (seconds < 3600) return '${(seconds / 60).floor()} min';
-    return '${(seconds / 3600).toStringAsFixed(1)} h';
-  }
+  static String _hours(int seconds) => Fmt.listened(seconds);
 }
 
 class _Stat extends StatelessWidget {
