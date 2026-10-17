@@ -41,6 +41,8 @@ Future<void> main() async {
 
   final store = LocalStore();
   await store.init();
+  // A server chosen in Settings wins over the one baked in at build time.
+  AppConfig.applyServerOverride(store.serverUrl(), store.serverKey());
 
   // Resolve the backend URL from the always-on Vercel registry (the LAN IP
   // changes); fall back to the hardcoded AppConfig.apiBase if unreachable.

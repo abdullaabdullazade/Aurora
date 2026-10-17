@@ -28,9 +28,10 @@ abstract final class AppConfig {
   static const String fallbackLanApi = 
       String.fromEnvironment('AURORA_FALLBACK_LAN', defaultValue: 'http://10.0.2.2:8000');
 
-  /// Secret key for authenticating with the resolver server.
-  static const String apiSecretKey =
-      String.fromEnvironment('AURORA_SECRET_KEY', defaultValue: '');
+  /// Secret key for authenticating with the resolver server. Set at build
+  /// time, or replaced at launch by the server chosen in Settings.
+  static String apiSecretKey =
+      const String.fromEnvironment('AURORA_SECRET_KEY', defaultValue: '');
 
   /// Firebase Google Sign-In Web client ID (OAuth client_type 3).
   /// Firebase Console → Authentication → Sign-in method → Google → Web client ID.
@@ -54,4 +55,26 @@ abstract final class AppConfig {
   /// Android emulator → http://10.0.2.2:8000 · physical phone → PC LAN IP.
   static String apiBase =
       useLocalServer ? localApiBase : fallbackLanApi;
+
+  /// The build-time server, kept so Settings can go back to it.
+  static final String defaultApiBase = apiBase;
+  static final String defaultApiSecretKey = apiSecretKey;
+
+  /// Applies a server picked in Settings. Must run before any provider
+  /// creates an HTTP client, since those capture [apiBase] once.
+  static void applyServerOverride(String? url, String? key) {
+    if (url == null || url.trim().isEmpty) return;
+    apiBase = normalizeServerUrl(url);
+    apiSecretKey = key ?? '';
+  }
+
+  /// "192.168.1.5:8000/" -> "http://192.168.1.5:8000"
+  static String normalizeServerUrl(String raw) {
+    var url = raw.trim();
+    if (!url.contains('://')) url = 'http://$url';
+    while (url.endsWith('/')) {
+      url = url.substring(0, url.length - 1);
+    }
+    return url;
+  }
 }

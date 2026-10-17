@@ -48,6 +48,15 @@ class LocalStore {
   static const _playbackSessionMaxAge = Duration(days: 30);
   static const _downloadTombstonesKey = 'download_tombstones';
   static const _statsResetKey = 'stats_reset_at';
+  // Which resolver this phone talks to (and its key) is device-local: it
+  // must not travel with the account to other devices.
+  static const _serverUrlKey = 'server_url';
+  static const _serverKeyKey = 'server_key';
+  static const _deviceOnlySettings = {
+    _playbackSessionKey,
+    _serverUrlKey,
+    _serverKeyKey,
+  };
   static const _tombstoneMaxAge = Duration(days: 90);
 
   late final Box<dynamic> _playlists;
@@ -438,7 +447,7 @@ class LocalStore {
             .toList(),
         'settings': {
           for (final entry in _settings.toMap().entries)
-            if (entry.key.toString() != _playbackSessionKey)
+            if (!_deviceOnlySettings.contains(entry.key.toString()))
               entry.key.toString(): _jsonValue(entry.value),
         },
       };
@@ -539,7 +548,7 @@ class LocalStore {
     if (remoteSettings is Map) {
       for (final entry in remoteSettings.entries) {
         final key = entry.key.toString();
-        if (key == _playbackSessionKey) continue;
+        if (_deviceOnlySettings.contains(key)) continue;
         if (!_settings.containsKey(key)) {
           await _settings.put(key, entry.value);
         }
@@ -569,6 +578,20 @@ class LocalStore {
   }
 
   // --- Simple bool/string settings ---------------------------------------
+  String? serverUrl() => _settings.get(_serverUrlKey) as String?;
+  String? serverKey() => _settings.get(_serverKeyKey) as String?;
+
+  /// Null [url] goes back to the server the app was built with.
+  Future<void> setServer(String? url, String? key) async {
+    if (url == null || url.trim().isEmpty) {
+      await _settings.delete(_serverUrlKey);
+      await _settings.delete(_serverKeyKey);
+      return;
+    }
+    await _settings.put(_serverUrlKey, url.trim());
+    await _settings.put(_serverKeyKey, (key ?? '').trim());
+  }
+
   bool flag(String key, {bool fallback = false}) =>
       (_settings.get(key) as bool?) ?? fallback;
 

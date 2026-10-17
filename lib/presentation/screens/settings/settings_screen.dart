@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/app_config.dart';
@@ -128,6 +129,18 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Top artists, most played, time listened',
             onTap: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const StatsScreen())),
+          ),
+          const SizedBox(height: Sp.xl),
+          Text('Server', style: text.labelLarge),
+          const SizedBox(height: Sp.sm),
+          _Tile(
+            icon: Icons.dns_rounded,
+            title: 'Aurora server',
+            subtitle: AppConfig.apiBase,
+            onTap: () => showDialog<void>(
+              context: context,
+              builder: (_) => const _ServerDialog(),
+            ),
           ),
           const SizedBox(height: Sp.xl),
           Text('About', style: text.labelLarge),
@@ -386,6 +399,143 @@ class _AccountSection extends ConsumerWidget {
           },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Text('Error: $e'),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// Points the app at a self-hosted resolver (LAN IP, Cloudflare tunnel, …)
+/// instead of the one baked in at build time. HTTP clients capture the URL
+/// when they are created, so a change applies after restarting the app.
+class _ServerDialog extends ConsumerStatefulWidget {
+  const _ServerDialog();
+
+  @override
+  ConsumerState<_ServerDialog> createState() => _ServerDialogState();
+}
+
+class _ServerDialogState extends ConsumerState<_ServerDialog> {
+  late final _url = TextEditingController(text: AppConfig.apiBase);
+  late final _key = TextEditingController(text: AppConfig.apiSecretKey);
+  String? _status;
+  bool _testing = false;
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _key.dispose();
+    super.dispose();
+  }
+
+  Future<void> _test() async {
+    final url = AppConfig.normalizeServerUrl(_url.text);
+    setState(() {
+      _testing = true;
+      _status = null;
+    });
+    String status;
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 6),
+        headers: {
+          if (_key.text.trim().isNotEmpty) 'x-api-key': _key.text.trim(),
+        },
+      ));
+      await dio.get('$url/health');
+      // /health skips the key check; /suggest proves the key is right.
+      await dio.get('$url/suggest', queryParameters: {'q': 'a'});
+      status = 'Connected';
+    } on DioException catch (e) {
+      status = e.response?.statusCode == 401
+          ? 'Server reached, but the key is wrong'
+          : 'Could not reach $url';
+    } catch (_) {
+      status = 'Could not reach $url';
+    }
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _status = status;
+    });
+  }
+
+  Future<void> _save({bool reset = false}) async {
+    final store = ref.read(localStoreProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    if (reset) {
+      await store.setServer(null, null);
+    } else {
+      await store.setServer(
+          AppConfig.normalizeServerUrl(_url.text), _key.text.trim());
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Saved. Close and reopen Aurora to use this server.'),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final custom = ref.read(localStoreProvider).serverUrl() != null;
+    InputDecoration field(String label, String hint) => InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: const TextStyle(color: AppColors.textSecondary),
+          hintStyle: const TextStyle(color: AppColors.textTertiary),
+        );
+    return AlertDialog(
+      backgroundColor: AppColors.elevated,
+      shape: const RoundedRectangleBorder(borderRadius: Radii.rLg),
+      title: const Text('Aurora server',
+          style: TextStyle(color: AppColors.textPrimary)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _url,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: field('Address', 'http://192.168.1.5:8000'),
+          ),
+          const SizedBox(height: Sp.sm),
+          TextField(
+            controller: _key,
+            obscureText: true,
+            autocorrect: false,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: field('Key (AURORA_SECRET_KEY)', 'empty if none'),
+          ),
+          const SizedBox(height: Sp.md),
+          if (_testing)
+            const LinearProgressIndicator(color: AppColors.accentBright)
+          else if (_status != null)
+            Text(_status!,
+                style: TextStyle(
+                    color: _status == 'Connected'
+                        ? AppColors.accentBright
+                        : Colors.red.shade300)),
+        ],
+      ),
+      actions: [
+        if (custom)
+          TextButton(
+            onPressed: () => _save(reset: true),
+            child: const Text('Use default'),
+          ),
+        TextButton(
+          onPressed: _testing ? null : _test,
+          child: const Text('Test'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.accent),
+          onPressed: () => _save(),
+          child: const Text('Save'),
         ),
       ],
     );
