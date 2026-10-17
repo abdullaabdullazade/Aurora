@@ -613,7 +613,7 @@ class PlayerController extends Notifier<PlayerState> {
       if (playing) {
         await _player.pause();
         await Future<void>.delayed(const Duration(milliseconds: 60));
-        await _player.play();
+        _play();
       }
     } catch (_) {}
   }
@@ -665,7 +665,7 @@ class PlayerController extends Notifier<PlayerState> {
       _userPaused = false;
       _cancelFade();
       await _player.setVolume(_baseVolume);
-      await _player.play();
+      _play();
     }
   }
 
@@ -905,7 +905,7 @@ class PlayerController extends Notifier<PlayerState> {
         ps != ja.ProcessingState.loading) {
       _cancelFade();
       await _player.setVolume(_baseVolume);
-      await _player.play();
+      _play();
     }
   }
 
@@ -1242,30 +1242,40 @@ class PlayerController extends Notifier<PlayerState> {
     final ready = await _waitUntilPlayable(token);
     if (!ready || token != _loadToken) return false;
     if (_userPaused) return true;
-    await _player.play();
-    if (token != _loadToken) return false;
-    if (_userPaused) {
-      await _player.pause();
-      return true;
-    }
-    if (!_player.playing) {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+    // Two tries: right after setAudioSource the first play() is occasionally
+    // dropped (seen while backgrounded).
+    for (var attempt = 0; attempt < 2 && !_player.playing; attempt++) {
+      _play();
+      await _waitForPlaying(const Duration(seconds: 2));
       if (token != _loadToken) return false;
-      if (_userPaused) return true;
-      await _player.play();
       if (_userPaused) {
         await _player.pause();
         return true;
       }
     }
-    if (token != _loadToken) return false;
-    if (_userPaused) {
-      await _player.pause();
-      return true;
-    }
     if (!_player.playing) return false;
     _fadeIn();
     return true;
+  }
+
+  /// Starts playback without waiting on it. just_audio's play() future only
+  /// completes when playback pauses, stops or ends, so awaiting it held the
+  /// rest of a load — recording the listen in history/stats, warming the
+  /// next track, queueing similar songs — until the song was over, and for
+  /// a song that ended on its own those steps never ran at all.
+  void _play() {
+    unawaited(_player.play().catchError((Object e) {
+      debugPrint('[player] play failed: $e');
+    }));
+  }
+
+  Future<void> _waitForPlaying(Duration timeout) async {
+    if (_player.playing) return;
+    try {
+      await _player.playingStream.firstWhere((p) => p).timeout(timeout);
+    } on TimeoutException {
+      // Caller checks _player.playing.
+    }
   }
   // One player can only render one stream, so this is a fade-out into a
   // fade-in rather than two tracks overlapping. It removes the hard cut

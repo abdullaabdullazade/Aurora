@@ -66,14 +66,17 @@ class ApiMusicRepository implements MusicRepository {
         .toList(growable: false);
   }
 
+  /// Rows fit for recommendation lists (search shows everything).
   /// Live streams never finish downloading on the resolver, so they would
-  /// spin forever when tapped. Search results omit is_live on older servers;
-  /// a zero duration on a video is the same signal there.
+  /// spin forever when tapped; search results omit is_live on older servers,
+  /// and a zero duration is the same signal there. Anything over 15 minutes
+  /// is a "Top Hits 2026" style compilation, not a song.
   static bool _isPlayable(Map<String, dynamic> j) {
     if (j['live'] == true) return false;
     final kind = Track.kindFrom(j['kind']);
     if (kind != TrackKind.track) return true;
-    return ((j['duration'] as num?)?.toInt() ?? 0) > 0;
+    final seconds = (j['duration'] as num?)?.toInt() ?? 0;
+    return seconds > 0 && seconds <= 15 * 60;
   }
 
   static const _searchCacheTtl = Duration(minutes: 30);
