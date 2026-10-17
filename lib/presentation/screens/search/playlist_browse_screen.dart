@@ -116,17 +116,26 @@ class PlaylistBrowseScreen extends ConsumerWidget {
                             color: AppColors.textSecondary,
                           ),
                           onPressed: () async {
-                            await ref
-                                .read(playlistsProvider.notifier)
-                                .createWith(title, tracks);
+                            // A second tap used to create a duplicate.
+                            final ids = tracks.map((t) => t.id).join(',');
+                            final exists = ref.read(playlistsProvider).any(
+                                (p) =>
+                                    p.name == title &&
+                                    p.tracks.map((t) => t.id).join(',') ==
+                                        ids);
+                            if (!exists) {
+                              await ref
+                                  .read(playlistsProvider.notifier)
+                                  .createWith(title, tracks);
+                            }
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 behavior: SnackBarBehavior.floating,
                                 backgroundColor: AppColors.elevated,
-                                content: Text(
-                                  'Saved “$title” · ${tracks.length} tracks',
-                                ),
+                                content: Text(exists
+                                    ? '“$title” is already in your Library'
+                                    : 'Saved “$title” · ${tracks.length} tracks'),
                               ),
                             );
                           },

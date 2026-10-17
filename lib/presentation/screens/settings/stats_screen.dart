@@ -7,6 +7,7 @@ import '../../../core/utils/formatters.dart';
 import '../../state/player_controller.dart';
 import '../../state/providers.dart';
 import '../../widgets/artwork.dart';
+import '../library/library_screen.dart' show confirmDialog;
 
 /// What the listening log actually adds up to. Recents are capped and
 /// reordered, so this reads the durable stats box instead.
@@ -44,6 +45,12 @@ class StatsScreen extends ConsumerWidget {
               tooltip: 'Reset',
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: () async {
+                final ok = await confirmDialog(context,
+                    title: 'Reset listening stats?',
+                    message: 'Play counts and listening time are cleared on '
+                        'all your devices. Most played starts over.',
+                    confirmLabel: 'Reset');
+                if (!ok) return;
                 await ref.read(localStoreProvider).clearStats();
                 ref.invalidate(listeningStatsProvider);
               },

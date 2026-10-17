@@ -87,4 +87,25 @@ void main() {
 
     expect(store.isAutoDownload('ddddddddddd'), isTrue);
   });
+
+  test('a stats reset is not undone by an older snapshot', () async {
+    final t = _track('eeeeeeeeeee');
+    await store.bumpPlay(t);
+    final stale = store.syncState();
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await store.clearStats();
+
+    await store.mergeSyncState({'stats': stale['stats']});
+
+    expect(store.stats(), isEmpty);
+  });
+
+  test('a stats reset on another device clears older local rows', () async {
+    await store.bumpPlay(_track('fffffffffff'));
+    final later = DateTime.now().millisecondsSinceEpoch + 1000;
+
+    await store.mergeSyncState({'statsResetAt': later});
+
+    expect(store.stats(), isEmpty);
+  });
 }

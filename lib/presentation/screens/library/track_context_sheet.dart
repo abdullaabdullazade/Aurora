@@ -103,7 +103,17 @@ class TrackContextSheet extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
     final svc = RingtoneService.instance;
-    final ok = await svc.set(track.id, type);
+    final bool ok;
+    try {
+      ok = await svc.set(track.id, type);
+    } on PlatformException catch (e) {
+      messenger.showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.elevated,
+        content: Text('Could not set ${type.name}: ${e.message ?? e.code}'),
+      ));
+      return;
+    }
     if (ok) {
       messenger.showSnackBar(SnackBar(
         behavior: SnackBarBehavior.floating,
@@ -264,7 +274,9 @@ class TrackContextSheet extends ConsumerWidget {
                 _share();
               },
             ),
-            if (track.localPath != null) ...[
+            // Ringtones reuse the song's MediaStore row, which downloads
+            // (app-private files) do not have.
+            if (_isDeviceSong) ...[
               const Divider(height: 1, color: AppColors.glassStroke),
               _Item(
                 icon: Icons.notifications_active_rounded,

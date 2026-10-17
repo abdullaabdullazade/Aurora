@@ -22,7 +22,9 @@ import 'playlist_detail_screen.dart';
 
 /// Shared confirm dialog. Returns true if the user confirms.
 Future<bool> confirmDialog(BuildContext context,
-    {required String title, required String message}) async {
+    {required String title,
+    required String message,
+    String confirmLabel = 'Delete'}) async {
   final res = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -39,7 +41,7 @@ Future<bool> confirmDialog(BuildContext context,
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete'),
+          child: Text(confirmLabel),
         ),
       ],
     ),
