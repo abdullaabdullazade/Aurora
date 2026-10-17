@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +15,9 @@ import '../../state/favorites_controller.dart';
 import '../../state/download_controller.dart';
 import 'device_music_tab.dart';
 import 'favorites_screen.dart';
+import 'most_played_screen.dart';
+import '../settings/stats_screen.dart';
+import '../../../core/utils/formatters.dart';
 import 'playlist_detail_screen.dart';
 
 /// Shared confirm dialog. Returns true if the user confirms.
@@ -325,20 +327,52 @@ class _PlaylistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final playlists = ref.watch(playlistsProvider);
     final likedCount = ref.watch(favoritesProvider).length;
+    final mostPlayedCount = ref.watch(mostPlayedProvider).length;
+    final mostPlayedOffline = ref.watch(offlineMostPlayedProvider);
+    final listenedSeconds = ref
+        .watch(listeningStatsProvider)
+        .fold<int>(0, (sum, s) => sum + s.secondsPlayed);
+    const pinned = 3; // Liked Songs, Most played, Listening stats
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(Sp.lg, Sp.lg, Sp.lg, 180),
-      itemCount: playlists.length + 1, // + pinned Liked Songs
+      itemCount: playlists.length + pinned,
       separatorBuilder: (_, __) => const SizedBox(height: Sp.md),
       itemBuilder: (context, i) {
         if (i == 0) {
-          return _LikedSongsRow(
-            count: likedCount,
+          return _PinnedRow(
+            title: 'Liked Songs',
+            subtitle: '$likedCount songs',
+            icon: Icons.favorite_rounded,
+            colors: const [Color(0xFF7C4DFF), AppColors.accentBright],
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const FavoritesScreen())),
           );
         }
-        final p = playlists[i - 1];
+        if (i == 1) {
+          return _PinnedRow(
+            title: 'Most played',
+            subtitle: mostPlayedCount == 0
+                ? 'Your repeats show up here'
+                : '$mostPlayedCount songs'
+                    '${mostPlayedOffline ? ' · kept offline' : ''}',
+            icon: Icons.repeat_rounded,
+            colors: const [Color(0xFF0E5A4A), Color(0xFF1ED6A0)],
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const MostPlayedScreen())),
+          );
+        }
+        if (i == 2) {
+          return _PinnedRow(
+            title: 'Listening stats',
+            subtitle: '${Fmt.listened(listenedSeconds)} listened',
+            icon: Icons.insights_rounded,
+            colors: const [Color(0xFF9A4A12), Color(0xFFFFB04D)],
+            onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StatsScreen())),
+          );
+        }
+        final p = playlists[i - pinned];
         return _PlaylistRow(
           playlist: p,
           onTap: () => onOpen(p.id),
@@ -349,10 +383,20 @@ class _PlaylistsTab extends ConsumerWidget {
   }
 }
 
-class _LikedSongsRow extends StatelessWidget {
-  final int count;
+/// Built-in collection pinned above the user's playlists.
+class _PinnedRow extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> colors;
   final VoidCallback onTap;
-  const _LikedSongsRow({required this.count, required this.onTap});
+  const _PinnedRow({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.colors,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -372,22 +416,25 @@ class _LikedSongsRow extends StatelessWidget {
               height: 56,
               decoration: BoxDecoration(
                 borderRadius: Radii.rSm,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF7C4DFF), AppColors.accentBright],
+                  colors: colors,
                 ),
               ),
-              child: const Icon(Icons.favorite_rounded, color: Colors.white),
+              child: Icon(icon, color: Colors.white),
             ),
             const SizedBox(width: Sp.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Liked Songs', style: text.titleMedium),
+                  Text(title, style: text.titleMedium),
                   const SizedBox(height: 2),
-                  Text('$count songs', style: text.bodyMedium),
+                  Text(subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.bodyMedium),
                 ],
               ),
             ),
@@ -553,14 +600,9 @@ class _DownloadedTab extends ConsumerWidget {
                           message: '“${t.title}” will be removed from your '
                               'device.');
                       if (!ok) return;
-                      if (t.localPath != null) {
-                        try {
-                          final f = File(t.localPath!);
-                          if (f.existsSync()) f.deleteSync();
-                        } catch (_) {}
-                      }
-                      await ref.read(localStoreProvider).removeDownload(t.id);
-                      ref.invalidate(downloadsProvider);
+                      await ref
+                          .read(downloadControllerProvider.notifier)
+                          .deleteDownload(t);
                     },
                   ),
                 ),

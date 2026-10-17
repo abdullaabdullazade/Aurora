@@ -57,7 +57,10 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
     return '${folder.path}/$id.m4a';
   }
 
-  Future<void> download(Track track) async {
+  /// Downloads queued for the Most played list (see [LocalStore.saveDownload]).
+  final Set<String> _autoIds = {};
+
+  Future<void> download(Track track, {bool auto = false}) async {
     if (track.localPath != null || state.containsKey(track.id)) return;
     if (!await _wifiAllowed()) {
       NotificationService.instance.showDownloadError(
@@ -67,6 +70,7 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
       );
       return;
     }
+    auto ? _autoIds.add(track.id) : _autoIds.remove(track.id);
     state = {...state, track.id: (track: track, progress: 0.0, paused: false)};
     await _run(track);
   }
@@ -82,7 +86,9 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
         final path = existing.first.localPath;
         if (path != null && File(path).existsSync()) continue;
       }
-      if (!state.containsKey(track.id)) await download(track);
+      if (!state.containsKey(track.id)) {
+        await download(track, auto: store.isAutoDownload(track.id));
+      }
     }
   }
 
@@ -119,6 +125,7 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
   void cancel(String id) {
     final job = state[id];
     _tokens[id]?.cancel('cancel');
+    _autoIds.remove(id);
     NotificationService.instance.cancelDownloadNotif(id);
     _filePath(id).then(_deleteQuiet);
     state = {...state}..remove(id);
@@ -188,7 +195,8 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
       sink = null;
 
       final store = ref.read(localStoreProvider);
-      await store.saveDownload(t.copyWith(localPath: path));
+      await store.saveDownload(t.copyWith(localPath: path),
+          auto: _autoIds.remove(t.id));
       try {
         final r =
             await _dio.get('${AppConfig.apiBase}/lyrics', queryParameters: {
@@ -224,6 +232,16 @@ class DownloadController extends Notifier<Map<String, DownloadJob>> {
       NotificationService.instance.showDownloadError(t.id, t.title);
       state = {...state}..remove(t.id);
     }
+  }
+
+  /// Removes an offline copy: the file, its index entry, and (through the
+  /// tombstone the store records) the same download on other devices.
+  Future<void> deleteDownload(Track track) async {
+    if (state.containsKey(track.id)) cancel(track.id);
+    final path = track.localPath ?? await _filePath(track.id);
+    _deleteQuiet(path);
+    await ref.read(localStoreProvider).removeDownload(track.id);
+    ref.invalidate(downloadsProvider);
   }
 
   void _deleteQuiet(String path) {

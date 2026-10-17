@@ -46,6 +46,8 @@ class LocalStore {
   static const _maxSearchHistory = 12;
   static const _playbackSessionKey = 'playback_session';
   static const _playbackSessionMaxAge = Duration(days: 30);
+  static const _downloadTombstonesKey = 'download_tombstones';
+  static const _tombstoneMaxAge = Duration(days: 90);
 
   late final Box<dynamic> _playlists;
   late final Box<dynamic> _recents;
@@ -55,8 +57,13 @@ class LocalStore {
   late final Box<dynamic> _lyrics;
   late final Box<dynamic> _stats;
 
-  Future<void> init() async {
-    await Hive.initFlutter();
+  /// [hivePath] is for tests, which have no Flutter documents directory.
+  Future<void> init({@visibleForTesting String? hivePath}) async {
+    if (hivePath != null) {
+      Hive.init(hivePath);
+    } else {
+      await Hive.initFlutter();
+    }
     _playlists = await Hive.openBox(_playlistsBox);
     _recents = await Hive.openBox(_recentsBox);
     _downloads = await Hive.openBox(_downloadsBox);
@@ -84,9 +91,43 @@ class LocalStore {
   Map<dynamic, dynamic>? lyrics(String id) =>
       _lyrics.get(id) as Map<dynamic, dynamic>?;
 
+  /// Drops a download and records when, so account sync removes it on the
+  /// user's other devices instead of restoring it from their snapshot.
   Future<void> removeDownload(String id) async {
     await _downloads.delete(id);
     await _lyrics.delete(id);
+    final tombstones = _downloadTombstones()
+      ..[id] = DateTime.now().millisecondsSinceEpoch;
+    await _recents.put(_downloadTombstonesKey, tombstones);
+  }
+
+  /// Deleted download id -> deletion time (ms since epoch).
+  Map<String, int> _downloadTombstones() {
+    final raw = _recents.get(_downloadTombstonesKey);
+    if (raw is! Map) return {};
+    final cutoff = DateTime.now()
+        .subtract(_tombstoneMaxAge)
+        .millisecondsSinceEpoch;
+    return {
+      for (final entry in raw.entries)
+        if (entry.value is num && (entry.value as num).toInt() > cutoff)
+          entry.key.toString(): (entry.value as num).toInt(),
+    };
+  }
+
+  /// Deletes an audio file only if DownloadController wrote it (app-private
+  /// `aurora/` folder) — never anything else on the device.
+  Future<void> _deleteOwnFile(String? path) async {
+    if (path == null) return;
+    try {
+      final ownDir =
+          '${(await getApplicationDocumentsDirectory()).path}/aurora/';
+      if (!path.startsWith(ownDir)) return;
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      debugPrint('[store] could not delete download $path: $e');
+    }
   }
 
   // --- Favorites ---------------------------------------------------------
@@ -290,27 +331,23 @@ class LocalStore {
 
   Future<void> clearStats() => _stats.clear();
 
+  /// Forgets a track everywhere history is kept (used when its file is gone).
+  Future<void> forgetTrackHistory(String id) async {
+    await _stats.delete(id);
+    final raw = (_recents.get(_recentsKey) as List?) ?? const [];
+    await _recents.put(_recentsKey, [
+      for (final e in raw)
+        if (!(e is Map && e['id'] == id)) e,
+    ]);
+  }
+
   /// Wipes per-account data when switching users or signing out.
   /// Device prefs (theme, crossfade, hidden folders) are kept. Downloaded
   /// audio files are deleted too: once the index is gone nothing references
   /// them, and the next account restores its own downloads on sign-in.
   Future<void> clearAccountData() async {
-    // Only files DownloadController wrote; never anything else on the device.
-    String? ownDir;
-    try {
-      ownDir = '${(await getApplicationDocumentsDirectory()).path}/aurora/';
-    } catch (e) {
-      debugPrint('[store] documents dir unavailable: $e');
-    }
     for (final track in downloads()) {
-      final path = track.localPath;
-      if (ownDir == null || path == null || !path.startsWith(ownDir)) continue;
-      try {
-        final file = File(path);
-        if (await file.exists()) await file.delete();
-      } catch (e) {
-        debugPrint('[store] could not delete download $path: $e');
-      }
+      await _deleteOwnFile(track.localPath);
     }
     await Future.wait([
       clearPlaybackSession(),
@@ -339,13 +376,50 @@ class LocalStore {
       .map((e) => Track.fromJson(Map<dynamic, dynamic>.from(e as Map)))
       .toList();
 
-  Future<void> saveDownload(Track t) => _downloads.put(t.id, t.toJson());
+  /// [auto] marks downloads made for the Most played list, which are removed
+  /// again once the track drops out of it.
+  Future<void> saveDownload(Track t, {bool auto = false}) async {
+    await _downloads.put(t.id, {
+      ...t.toJson(),
+      'downloadedAt': DateTime.now().millisecondsSinceEpoch,
+      'auto': auto,
+    });
+    // Downloading again overrides an earlier deletion.
+    final tombstones = _downloadTombstones();
+    if (tombstones.remove(t.id) != null) {
+      await _recents.put(_downloadTombstonesKey, tombstones);
+    }
+  }
+
+  /// File of a finished download, if this track has one.
+  String? downloadPath(String id) {
+    final raw = _downloads.get(id);
+    return raw is Map ? raw['localPath'] as String? : null;
+  }
+
+  bool isAutoDownload(String id) {
+    final raw = _downloads.get(id);
+    return raw is Map && raw['auto'] == true;
+  }
+
+  int _downloadedAt(String id) {
+    final raw = _downloads.get(id);
+    return raw is Map ? (raw['downloadedAt'] as num?)?.toInt() ?? 0 : 0;
+  }
 
   // --- Account sync snapshot --------------------------------------------
   Map<String, dynamic> syncState() => {
         'version': 1,
         'recents': recents().map(_portableTrack).toList(),
-        'downloads': downloads().map(_portableTrack).toList(),
+        'downloads': [
+          for (final t in downloads())
+            {
+              ..._portableTrack(t),
+              'downloadedAt': _downloadedAt(t.id),
+              'auto': isAutoDownload(t.id),
+            },
+        ],
+        'deletedDownloads': _downloadTombstones(),
         'lyrics': {
           for (final entry in _lyrics.toMap().entries)
             entry.key.toString(): _jsonValue(entry.value),
@@ -377,13 +451,42 @@ class LocalStore {
       mergedRecents.take(_maxRecents).map(_portableTrack).toList(),
     );
 
-    final desiredDownloads = ((state['downloads'] as List?) ?? const [])
-        .whereType<Map>()
-        .map(Track.fromJson)
-        .toList();
-    for (final track in desiredDownloads) {
+    // Newest event per track wins: a deletion on one device removes the
+    // download everywhere, and downloading again later brings it back.
+    final tombstones = _downloadTombstones();
+    final remoteTombstones = state['deletedDownloads'];
+    if (remoteTombstones is Map) {
+      for (final entry in remoteTombstones.entries) {
+        final at = entry.value;
+        if (at is! num) continue;
+        final id = entry.key.toString();
+        if (at.toInt() > (tombstones[id] ?? 0)) tombstones[id] = at.toInt();
+      }
+    }
+    for (final entry in tombstones.entries) {
+      if (!_downloads.containsKey(entry.key)) continue;
+      if (_downloadedAt(entry.key) >= entry.value) continue;
+      final raw = _downloads.get(entry.key);
+      await _deleteOwnFile(raw is Map ? raw['localPath'] as String? : null);
+      await _downloads.delete(entry.key);
+      await _lyrics.delete(entry.key);
+    }
+    await _recents.put(_downloadTombstonesKey, tombstones);
+
+    final desiredDownloads = <Track>[];
+    for (final raw
+        in ((state['downloads'] as List?) ?? const []).whereType<Map>()) {
+      final track = Track.fromJson(raw);
+      final at = (raw['downloadedAt'] as num?)?.toInt() ?? 0;
+      final deletedAt = tombstones[track.id];
+      if (deletedAt != null && deletedAt >= at) continue;
+      desiredDownloads.add(track);
       if (!_downloads.containsKey(track.id)) {
-        await _downloads.put(track.id, _portableTrack(track));
+        await _downloads.put(track.id, {
+          ..._portableTrack(track),
+          'downloadedAt': at,
+          'auto': raw['auto'] == true,
+        });
       }
     }
 
