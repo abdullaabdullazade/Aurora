@@ -149,6 +149,24 @@ class ApiMusicRepository implements MusicRepository {
   }
 
   @override
+  Future<List<Track>> related(String videoId, {int limit = 25}) async {
+    final key = 'related|$videoId|$limit';
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchCacheTtl) {
+      return hit.tracks;
+    }
+    final res = await _dio.get('/related',
+        queryParameters: {'v': videoId, 'limit': limit});
+    final tracks = (res.data as List)
+        .cast<Map<String, dynamic>>()
+        .where(_isPlayable)
+        .map(_fromJson)
+        .toList(growable: false);
+    _searchCache[key] = (at: DateTime.now(), tracks: tracks);
+    return tracks;
+  }
+
+  @override
   void invalidateRecommendationCaches() {
     _cache.remove('trending');
     _cache.remove('topCharts');

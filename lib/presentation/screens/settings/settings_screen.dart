@@ -96,6 +96,15 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) =>
                 ref.read(resumePlaybackProvider.notifier).set(v),
           ),
+          _Switch(
+            icon: Icons.all_inclusive_rounded,
+            title: 'Autoplay similar songs',
+            subtitle: 'When the queue ends, keep playing songs like the last '
+                'one, as YouTube does',
+            value: ref.watch(autoplaySimilarProvider),
+            onChanged: (v) =>
+                ref.read(autoplaySimilarProvider.notifier).set(v),
+          ),
           const SizedBox(height: Sp.xl),
           Text('Library', style: text.labelLarge),
           const SizedBox(height: Sp.sm),

@@ -51,6 +51,10 @@ class MockMusicRepository implements MusicRepository {
   Future<List<Track>> topCharts() => _delayed(MockTracks.trending);
 
   @override
+  Future<List<Track>> related(String videoId, {int limit = 25}) =>
+      _delayed(MockTracks.trending);
+
+  @override
   void invalidateRecommendationCaches() {}
 
   @override

@@ -988,6 +988,65 @@ def youtube_subscriptions(request: Request, limit: int = 20) -> list[dict[str, A
     return tracks
 
 
+_related_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_related_lock = threading.Lock()
+_RELATED_TTL = 60 * 60
+_RELATED_CACHE_MAX = 500
+
+
+def _related_rows(info: dict[str, Any], seed: str) -> list[dict[str, Any]]:
+    rows = []
+    for row in _entries(info or {}):
+        duration = row["duration"]
+        # Drop the seed itself, live streams and hour-long compilations.
+        if row["id"] == seed or row["live"]:
+            continue
+        if duration and not 60 <= duration <= 15 * 60:
+            continue
+        rows.append(row)
+    return rows
+
+
+@app.get("/related")
+def related(v: str, limit: int = 25) -> list[dict[str, Any]]:
+    """Songs like this one, from YouTube's own Mix for the video (the list
+    its autoplay uses): same artist, then similar artists and genre."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,64}", v):
+        raise HTTPException(400, "invalid YouTube video ID")
+    limit = max(1, min(limit, 50))
+    now = time.time()
+    with _related_lock:
+        hit = _related_cache.get(v)
+    if hit and now - hit[0] < _RELATED_TTL:
+        return hit[1][:limit]
+
+    rows: list[dict[str, Any]] = []
+    last: Exception | None = None
+    # RDAMVM is the YouTube Music radio (songs only); RD is the plain video
+    # Mix, used when the music one is empty for this video.
+    for prefix in ("RDAMVM", "RD"):
+        try:
+            info = _extract_flat(
+                f"https://www.youtube.com/watch?v={v}&list={prefix}{v}",
+                {"noplaylist": False, "playlistend": 50},
+            )
+        except Exception as e:  # noqa: BLE001
+            last = e
+            continue
+        rows = _related_rows(info, v)
+        if rows:
+            break
+    if not rows and last is not None:
+        raise HTTPException(502, f"related failed: {last}")
+
+    with _related_lock:
+        if len(_related_cache) >= _RELATED_CACHE_MAX:
+            oldest = min(_related_cache, key=lambda k: _related_cache[k][0])
+            _related_cache.pop(oldest, None)
+        _related_cache[v] = (now, rows)
+    return rows[:limit]
+
+
 @app.get("/suggest")
 def suggest(q: str) -> list[str]:
     """YouTube's own search autocomplete. Returns [] rather than failing —

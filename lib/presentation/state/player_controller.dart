@@ -14,6 +14,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../core/theme/dynamic_palette.dart';
 import '../../data/datasources/yt_stream_resolver.dart';
 import '../../domain/entities/track.dart';
+import '../../domain/services/recommendations.dart';
 import '../../core/db/sync_service.dart';
 import 'providers.dart';
 
@@ -819,10 +820,72 @@ class PlayerController extends Notifier<PlayerState> {
       unawaited(_player.play());
       return;
     }
+    if (_atQueueEnd && _canAutoplaySimilar()) {
+      _advanceFromId = fromTrackId;
+      debugPrint('[player] advance from=$fromTrackId reason=$reason (autoplay)');
+      unawaited(() async {
+        final extended = await _extendWithSimilar();
+        if (state.current?.id != fromTrackId) return; // user moved on
+        // Extended: next() moves into the new songs. Otherwise keep the old
+        // behaviour (wrap to the start of a multi-track queue, else stop).
+        if (extended || state.queue.length > 1) await next();
+      }());
+      return;
+    }
     if (state.queue.length <= 1) return;
     _advanceFromId = fromTrackId;
     debugPrint('[player] advance from=$fromTrackId reason=$reason');
     unawaited(next());
+  }
+
+  // --- Autoplay similar songs ---------------------------------------------
+  String? _extendedFor;
+  Future<bool>? _extending;
+
+  bool get _atQueueEnd => state.index >= state.queue.length - 1;
+
+  bool _canAutoplaySimilar() {
+    final current = state.current;
+    return current != null &&
+        state.repeat == LoopMode.off &&
+        isYoutubeId(current.id) &&
+        ref.read(autoplaySimilarProvider);
+  }
+
+  /// Appends songs like the current one (YouTube's Mix for it) to the end of
+  /// the queue, once per track. Started when the last track begins so the
+  /// next song is known — and warmed — before this one ends.
+  Future<bool> _extendWithSimilar() {
+    final seed = state.current;
+    if (seed == null) return Future.value(false);
+    if (_extendedFor == seed.id) return _extending ?? Future.value(false);
+    _extendedFor = seed.id;
+    final future = () async {
+      try {
+        final picks = await ref
+            .read(musicRepositoryProvider)
+            .related(seed.id, limit: 30);
+        // The user picked something else or queued more meanwhile.
+        if (state.current?.id != seed.id || !_atQueueEnd) return false;
+        final inQueue = {for (final t in state.queue) t.id};
+        final add = picks
+            .where((t) => !inQueue.contains(t.id))
+            .take(15)
+            .toList(growable: false);
+        if (add.isEmpty) return false;
+        state = state.copyWith(queue: [...state.queue, ...add]);
+        unawaited(persistSessionNow());
+        if (_player.playing) unawaited(_warmNextTrack());
+        return true;
+      } catch (e) {
+        debugPrint('[player] autoplay similar failed: $e');
+        return false;
+      }
+    }();
+    _extending = future;
+    return future.whenComplete(() {
+      if (identical(_extending, future)) _extending = null;
+    });
   }
 
   /// After returning from background / lock screen: finish a stuck advance or
@@ -1126,6 +1189,9 @@ class PlayerController extends Notifier<PlayerState> {
       await _persistSession();
       if (recordRecent) _recordRecentDeferred(track);
       if (_player.playing) unawaited(_warmNextTrack());
+      if (_atQueueEnd && _canAutoplaySimilar()) {
+        unawaited(_extendWithSimilar());
+      }
     } catch (e, st) {
       debugPrint('[player] load failed: $e\n$st');
       if (token == _loadToken) {

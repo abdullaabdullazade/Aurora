@@ -1,0 +1,72 @@
+import '../entities/track.dart';
+
+/// Pure helpers behind "For you": pick a few songs that describe the
+/// listener's taste, then blend YouTube's Mix for each of them.
+
+/// YouTube video ids; device (MediaStore) rows have short numeric ids and
+/// have no Mix.
+bool isYoutubeId(String id) =>
+    RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id) && int.tryParse(id) == null;
+
+/// "EminemMusic", "Eminem - Topic", "EminemVEVO" -> "eminem", so one artist
+/// is not counted as three when capping how often they appear.
+String artistKey(String artist) {
+  var a = artist.toLowerCase().trim();
+  a = a.replaceAll(RegExp(r'\s*-\s*topic$'), '');
+  a = a.replaceAll(RegExp(r'(vevo|official|music|tv)$'), '');
+  return a.replaceAll(RegExp(r'[^a-z0-9À-ɏЀ-ӿ]'), '');
+}
+
+/// Up to [count] seeds with different artists: the most recent listens
+/// first (what you are into now), then the most played (what you always
+/// come back to). [recent] is newest first; [mostPlayed] is ranked.
+List<Track> pickSeeds({
+  required List<Track> recent,
+  required List<Track> mostPlayed,
+  required List<Track> liked,
+  int count = 5,
+}) {
+  final seeds = <Track>[];
+  final artists = <String>{};
+  void take(Iterable<Track> source, int upTo) {
+    for (final t in source) {
+      if (seeds.length >= upTo) return;
+      if (!isYoutubeId(t.id)) continue;
+      if (!artists.add(artistKey(t.artist))) continue;
+      seeds.add(t);
+    }
+  }
+
+  take(recent, 3);
+  take(mostPlayed, count);
+  take(liked, count); // a listener with likes but little history
+  return seeds;
+}
+
+/// Round-robin over the seed Mixes so every taste is represented, skipping
+/// songs the listener already knows ([exclude]) and capping each artist at
+/// [perArtist] so one artist's Mix cannot fill the whole row.
+List<Track> blendRecommendations(
+  List<List<Track>> mixes, {
+  Set<String> exclude = const {},
+  int perArtist = 2,
+  int limit = 30,
+}) {
+  final out = <Track>[];
+  final seen = <String>{...exclude};
+  final perArtistCount = <String, int>{};
+  final longest = mixes.fold<int>(0, (m, l) => l.length > m ? l.length : m);
+  for (var i = 0; i < longest && out.length < limit; i++) {
+    for (final mix in mixes) {
+      if (i >= mix.length || out.length >= limit) continue;
+      final t = mix[i];
+      if (!seen.add(t.id)) continue;
+      final key = artistKey(t.artist);
+      final n = perArtistCount[key] ?? 0;
+      if (n >= perArtist) continue;
+      perArtistCount[key] = n + 1;
+      out.add(t);
+    }
+  }
+  return out;
+}
