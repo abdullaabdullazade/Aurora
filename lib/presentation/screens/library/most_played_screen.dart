@@ -88,7 +88,7 @@ class MostPlayedScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: Sp.lg),
-              activeThumbColor: AppColors.accentBright,
+              activeColor: AppColors.accentBright,
               title: Text('Keep offline', style: text.titleSmall),
               subtitle: Text(
                 offline
