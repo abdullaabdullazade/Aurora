@@ -1070,6 +1070,14 @@ class PlayerController extends Notifier<PlayerState> {
     _advancing = true;
     _stuckSince = null;
     _cancelFade();
+    // The previous song must not keep playing while this one resolves (a
+    // cold track takes seconds). Pause, not stop(): stop() tears down the
+    // media foreground service the next source needs to play.
+    if (_player.playing) {
+      unawaited(_player.pause().catchError((Object e) {
+        debugPrint('[player] pause before load failed: $e');
+      }));
+    }
     state = state.copyWith(
       isLoading: true,
       position: startAt > Duration.zero ? startAt : Duration.zero,

@@ -107,7 +107,7 @@ List<String> _topArtists(List<PlayStat> stats, List<Track> favorites,
     {required int count}) {
   final artistCounts = <String, int>{};
   for (final row in stats) {
-    final artist = row.track.artist.trim();
+    final artist = cleanArtistName(row.track.artist);
     if (artist.isEmpty || artist == 'Unknown') continue;
     artistCounts[artist] = (artistCounts[artist] ?? 0) + row.count;
   }
@@ -116,7 +116,7 @@ List<String> _topArtists(List<PlayStat> stats, List<Track> favorites,
   final artists = ranked.take(count).map((e) => e.key).toList();
   if (artists.isNotEmpty) return artists;
   return favorites
-      .map((t) => t.artist.trim())
+      .map((t) => cleanArtistName(t.artist))
       .where((a) => a.isNotEmpty && a != 'Unknown')
       .toSet()
       .take(count)

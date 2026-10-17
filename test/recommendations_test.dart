@@ -85,7 +85,8 @@ void main() {
           _t('b', 'EzhelVEVO'),
           _t('c', 'Ati242'),
           _t('d', 'Unknown'),
+          _t('e', 'S.O.S and 2 more'),
         ]),
-        ['Ezhel', 'Ati242']);
+        ['Ezhel', 'Ati242', 'S.O.S']);
   });
 }

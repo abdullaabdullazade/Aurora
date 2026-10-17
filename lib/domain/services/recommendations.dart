@@ -100,13 +100,17 @@ String? guessChartCountry(List<Track> mostPlayed) {
   return best.key;
 }
 
+/// "S.O.S and 2 more" (YouTube's label for multi-artist uploads) -> "S.O.S".
+String cleanArtistName(String artist) =>
+    artist.replaceAll(RegExp(r'\s+and\s+\d+\s+more$'), '').trim();
+
 /// Distinct artists in order of first appearance, by [artistKey].
 List<String> distinctArtists(Iterable<Track> tracks, {int limit = 6}) {
   final out = <String>[];
   final seen = <String>{};
   for (final t in tracks) {
     if (out.length >= limit) break;
-    final name = t.artist.trim();
+    final name = cleanArtistName(t.artist);
     if (name.isEmpty || name == 'Unknown') continue;
     if (seen.add(artistKey(name))) out.add(name);
   }
