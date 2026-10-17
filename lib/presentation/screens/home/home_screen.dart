@@ -71,8 +71,13 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final forYou = ref.watch(forYouProvider);
     final playlistsForYou = ref.watch(playlistsForYouProvider);
-    final trending = ref.watch(trendingProvider);
+    final hasTaste = ref.watch(hasTasteProvider);
+    // With listening history "Trending now" becomes new releases from the
+    // listener's artists; general trends are only for a fresh install.
+    final trending =
+        hasTaste ? ref.watch(newForYouProvider) : ref.watch(trendingProvider);
     final charts = ref.watch(topChartsProvider);
+    final chartCountry = ref.watch(chartCountryProvider);
     final recent = ref.watch(recentlyPlayedProvider);
     final recentPlaylists = ref.watch(recentPlaylistsProvider);
     final libraryPlaylists = ref.watch(playlistsProvider);
@@ -91,13 +96,16 @@ class HomeScreen extends ConsumerWidget {
         ref.invalidate(forYouProvider);
         ref.invalidate(playlistsForYouProvider);
         ref.invalidate(trendingProvider);
+        ref.invalidate(newForYouProvider);
         ref.invalidate(topChartsProvider);
         ref.invalidate(quickDownloadsProvider);
         ref.invalidate(recentlyPlayedProvider);
         ref.read(syncRevisionProvider.notifier).state++;
         await Future.wait([
           ref.read(forYouProvider.future),
-          ref.read(trendingProvider.future),
+          hasTaste
+              ? ref.read(newForYouProvider.future)
+              : ref.read(trendingProvider.future),
         ]);
       },
       child: CustomScrollView(
@@ -201,17 +209,21 @@ class HomeScreen extends ConsumerWidget {
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
-              title: 'Trending now',
+              title: hasTaste ? 'New from your artists' : 'Trending now',
               data: trending,
               cardSize: 168,
-              emptyTitle: 'No trends right now',
+              emptyTitle:
+                  hasTaste ? 'Nothing new this week' : 'No trends right now',
               emptySubtitle: 'Pull down to refresh in a moment.',
-              onRetry: () => ref.invalidate(trendingProvider),
+              onRetry: () => ref.invalidate(
+                  hasTaste ? newForYouProvider : trendingProvider),
             ),
           ),
           SliverToBoxAdapter(
             child: SectionCarousel(
-              title: '🔥 Top Charts',
+              title: chartCountry == null
+                  ? '🔥 Top Charts'
+                  : '🔥 Top Charts · $chartCountry',
               data: charts,
               cardSize: 168,
               emptyTitle: 'Charts are empty',

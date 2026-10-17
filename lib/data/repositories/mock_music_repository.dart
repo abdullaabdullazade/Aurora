@@ -55,6 +55,14 @@ class MockMusicRepository implements MusicRepository {
       _delayed(MockTracks.trending);
 
   @override
+  Future<List<Track>> chart(String country, {int limit = 50}) =>
+      _delayed(MockTracks.trending);
+
+  @override
+  Future<List<Track>> newFrom(String artist, {int limit = 4}) =>
+      _delayed(MockTracks.trending.take(limit).toList());
+
+  @override
   void invalidateRecommendationCaches() {}
 
   @override

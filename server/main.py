@@ -1047,6 +1047,123 @@ def related(v: str, limit: int = 25) -> list[dict[str, Any]]:
     return rows[:limit]
 
 
+_ttl_cache: dict[str, tuple[float, Any]] = {}
+_ttl_lock = threading.Lock()
+
+
+def _cached(key: str, ttl: float, build):
+    """Small per-process TTL cache for the recommendation endpoints."""
+    now = time.time()
+    with _ttl_lock:
+        hit = _ttl_cache.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    value = build()
+    with _ttl_lock:
+        if len(_ttl_cache) >= 1000:
+            oldest = min(_ttl_cache, key=lambda k: _ttl_cache[k][0])
+            _ttl_cache.pop(oldest, None)
+        _ttl_cache[key] = (now, value)
+    return value
+
+
+def _artist_key(name: str) -> str:
+    """'EminemMusic', 'Eminem - Topic', 'EminemVEVO' -> 'eminem'."""
+    a = (name or "").lower().strip()
+    a = re.sub(r"\s*-\s*topic$", "", a)
+    a = re.sub(r"(vevo|official|music|tv)$", "", a)
+    return re.sub(r"[\W_]+", "", a)
+
+
+def _song_rows(info: dict[str, Any]) -> list[dict[str, Any]]:
+    """Entries that are songs: no live streams, no hour-long compilations."""
+    return [
+        r for r in _entries(info or {})
+        if not r["live"] and (not r["duration"] or 60 <= r["duration"] <= 15 * 60)
+    ]
+
+
+_CHART_SEARCH_SP = "EgIQAw%3D%3D"  # results filter: playlists
+
+
+@app.get("/chart")
+def chart(country: str, limit: int = 50) -> dict[str, Any]:
+    """A country's Top 100 Songs from YouTube Music Charts (or, for countries
+    YouTube does not chart, the best-matching Top 100 playlist)."""
+    country = country.strip()
+    if not re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,39}", country):
+        raise HTTPException(400, "invalid country")
+    limit = max(1, min(limit, 100))
+
+    def build() -> dict[str, Any]:
+        query = quote_plus(f"Top 100 Songs {country}")
+        found = _extract_flat(
+            f"https://www.youtube.com/results?search_query={query}"
+            f"&sp={_CHART_SEARCH_SP}",
+            {"playlistend": 10},
+        )
+        candidates = [e for e in (found.get("entries") or []) if e and e.get("id")]
+        want = country.lower()
+
+        def score(e: dict[str, Any]) -> int:
+            title = (e.get("title") or "").lower()
+            owner = (e.get("channel") or e.get("uploader") or "").lower()
+            s = 0
+            if "youtube music" in owner and title.startswith("top 100 songs"):
+                s += 10  # the official chart
+            if want in title:
+                s += 3
+            if "top 100" in title:
+                s += 1
+            return s
+
+        candidates.sort(key=score, reverse=True)
+        if not candidates or score(candidates[0]) < 3:
+            raise HTTPException(404, f"no chart for {country}")
+        best = candidates[0]
+        info = _extract_flat(
+            f"https://www.youtube.com/playlist?list={best['id']}",
+            {"noplaylist": False, "playlistend": 100},
+        )
+        return {
+            "country": country,
+            "title": best.get("title") or f"Top 100 {country}",
+            "tracks": _song_rows(info),
+        }
+
+    data = _cached(f"chart|{country.lower()}", 6 * 3600, build)
+    return {**data, "tracks": data["tracks"][:limit]}
+
+
+_NEWEST_VIDEOS_SP = "CAISAhAB"  # results: videos only, sorted by upload date
+
+
+@app.get("/new")
+def new_from_artist(artist: str, limit: int = 8) -> list[dict[str, Any]]:
+    """The artist's latest uploads, newest first, from their own channel."""
+    artist = artist.strip()
+    if not 1 <= len(artist) <= 80:
+        raise HTTPException(400, "invalid artist")
+    limit = max(1, min(limit, 20))
+    key = _artist_key(artist)
+
+    def build() -> list[dict[str, Any]]:
+        info = _extract_flat(
+            "https://www.youtube.com/results?search_query="
+            f"{quote_plus(artist)}&sp={_NEWEST_VIDEOS_SP}",
+            {"playlistend": 20},
+        )
+        rows = []
+        for row in _song_rows(info):
+            owner = _artist_key(row["artist"])
+            # Only the artist's own uploads, not fan edits / reactions.
+            if key and owner and (key in owner or owner in key):
+                rows.append(row)
+        return rows
+
+    return _cached(f"new|{key}", 3600, build)[:limit]
+
+
 @app.get("/suggest")
 def suggest(q: str) -> list[str]:
     """YouTube's own search autocomplete. Returns [] rather than failing —

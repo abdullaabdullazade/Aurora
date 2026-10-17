@@ -406,5 +406,31 @@ class RelatedTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class ChartAndNewTest(unittest.TestCase):
+    def test_artist_key(self) -> None:
+        self.assertEqual(main._artist_key("EminemMusic"), "eminem")
+        self.assertEqual(main._artist_key("Eminem - Topic"), "eminem")
+        self.assertEqual(main._artist_key("EminemVEVO"), "eminem")
+        self.assertEqual(main._artist_key("Ati242"), "ati242")
+
+    def test_input_validation(self) -> None:
+        client = TestClient(main.app)
+        self.assertEqual(client.get("/chart", params={"country": "../x"}).status_code, 400)
+        self.assertEqual(client.get("/new", params={"artist": ""}).status_code, 400)
+
+    def test_new_keeps_only_the_artists_own_uploads(self) -> None:
+        original = main._extract_flat
+        self.addCleanup(setattr, main, "_extract_flat", original)
+        main._extract_flat = lambda target, extra=None, use_cookies=True: {
+            "entries": [
+                {"id": "a1aaaaaaaaa", "title": "new", "channel": "Ezhel", "duration": 180},
+                {"id": "b1bbbbbbbbb", "title": "reaction", "channel": "Some Fan", "duration": 600},
+                {"id": "c1ccccccccc", "title": "1h mix", "channel": "Ezhel", "duration": 3600},
+            ]}
+        main._ttl_cache.clear()
+        ids = [r["id"] for r in main.new_from_artist("Ezhel")]
+        self.assertEqual(ids, ["a1aaaaaaaaa"])
+
+
 if __name__ == "__main__":
     unittest.main()

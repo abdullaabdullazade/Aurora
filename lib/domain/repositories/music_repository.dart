@@ -22,6 +22,12 @@ abstract interface class MusicRepository {
   /// then similar artists and genre).
   Future<List<Track>> related(String videoId, {int limit = 25});
 
+  /// A country's Top 100 Songs (YouTube Music Charts).
+  Future<List<Track>> chart(String country, {int limit = 50});
+
+  /// The artist's latest uploads from their own channel, newest first.
+  Future<List<Track>> newFrom(String artist, {int limit = 4});
+
   /// Clears in-memory recommendation caches (trending / charts).
   void invalidateRecommendationCaches();
 

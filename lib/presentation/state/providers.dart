@@ -195,9 +195,68 @@ final recentPlaylistsProvider = Provider<List<RecentPlaylist>>((ref) {
   return ref.watch(localStoreProvider).recentPlaylists();
 });
 
-final topChartsProvider = FutureProvider<List<Track>>(
-  (ref) => ref.watch(musicRepositoryProvider).topCharts(),
-);
+/// Whether there is any listening signal to personalise from.
+final hasTasteProvider = Provider<bool>((ref) =>
+    ref.watch(listeningStatsProvider.select((s) => s.isNotEmpty)) ||
+    ref.watch(favoritesProvider.select((f) => f.isNotEmpty)));
+
+/// The chart that fits the listener (Turkish titles -> Turkey, …), from
+/// their 30 most played tracks; null means the global chart.
+final chartCountryProvider = Provider<String?>((ref) {
+  ref.watch(hasTasteProvider);
+  final ranked = [...ref.read(listeningStatsProvider)]
+    ..sort((a, b) => b.count.compareTo(a.count));
+  return guessChartCountry([
+    for (final s in ranked.take(30)) s.track,
+    ...ref.read(favoritesProvider).take(20),
+  ]);
+});
+
+final topChartsProvider = FutureProvider<List<Track>>((ref) async {
+  final repo = ref.watch(musicRepositoryProvider);
+  final country = ref.watch(chartCountryProvider);
+  if (country != null) {
+    try {
+      final tracks = await repo.chart(country);
+      if (tracks.isNotEmpty) return tracks;
+    } catch (_) {
+      // No chart for that country right now: the global one below.
+    }
+  }
+  return repo.topCharts();
+});
+
+/// Latest releases from the artists the listener plays most plus similar
+/// artists from For you — what "Trending now" means for this listener.
+/// Empty without listening history (Home then shows general trends).
+final newForYouProvider = FutureProvider<List<Track>>((ref) async {
+  ref.watch(syncRevisionProvider);
+  if (!ref.watch(hasTasteProvider)) return const [];
+  final repo = ref.watch(musicRepositoryProvider);
+  final stats = ref.read(listeningStatsProvider);
+  final ranked = [...stats]..sort((a, b) => b.count.compareTo(a.count));
+  final mine = distinctArtists(
+    [...ranked.map((s) => s.track), ...ref.read(favoritesProvider)],
+    limit: 3,
+  );
+  final forYou = await ref
+      .watch(forYouProvider.future)
+      .catchError((Object _) => const <Track>[]);
+  final mineKeys = {for (final a in mine) artistKey(a)};
+  final similar = distinctArtists(forYou, limit: 10)
+      .where((a) => !mineKeys.contains(artistKey(a)))
+      .take(3);
+  final artists = [...mine, ...similar];
+  final lists = await Future.wait(artists.map((a) => repo
+      .newFrom(a, limit: 4)
+      .catchError((Object _) => const <Track>[])));
+  // Songs already played are not news.
+  return blendRecommendations(
+    lists,
+    exclude: {for (final s in stats) s.track.id},
+    limit: 20,
+  );
+});
 
 /// Tracks for an artist (real artist APIs aren't available client-side, so we
 /// search the artist name and surface their top results).

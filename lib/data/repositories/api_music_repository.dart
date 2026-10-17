@@ -169,6 +169,41 @@ class ApiMusicRepository implements MusicRepository {
     return tracks;
   }
 
+  Future<List<Track>> _cachedTracks(
+      String key, Future<List<Track>> Function() load) async {
+    final hit = _searchCache[key];
+    if (hit != null && DateTime.now().difference(hit.at) < _searchCacheTtl) {
+      return hit.tracks;
+    }
+    final tracks = await load();
+    _searchCache[key] = (at: DateTime.now(), tracks: tracks);
+    return tracks;
+  }
+
+  @override
+  Future<List<Track>> chart(String country, {int limit = 50}) =>
+      _cachedTracks('chart|$country|$limit', () async {
+        final res = await _dio.get('/chart',
+            queryParameters: {'country': country, 'limit': limit});
+        return ((res.data as Map)['tracks'] as List)
+            .cast<Map<String, dynamic>>()
+            .where(_isPlayable)
+            .map(_fromJson)
+            .toList(growable: false);
+      });
+
+  @override
+  Future<List<Track>> newFrom(String artist, {int limit = 4}) =>
+      _cachedTracks('new|$artist|$limit', () async {
+        final res = await _dio.get('/new',
+            queryParameters: {'artist': artist, 'limit': limit});
+        return (res.data as List)
+            .cast<Map<String, dynamic>>()
+            .where(_isPlayable)
+            .map(_fromJson)
+            .toList(growable: false);
+      });
+
   @override
   void invalidateRecommendationCaches() {
     _cache.remove('trending');
