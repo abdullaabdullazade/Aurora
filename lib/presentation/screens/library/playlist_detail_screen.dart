@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../domain/entities/track.dart';
 import '../../state/playlist_controller.dart';
 import '../../state/player_controller.dart';
 import '../../state/recent_playlists.dart';
 import '../../widgets/artwork.dart';
 import '../../widgets/track_tile.dart';
+import 'track_context_sheet.dart';
 
 class PlaylistDetailScreen extends ConsumerWidget {
   final String playlistId;
@@ -136,12 +138,28 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   color: Colors.red.withValues(alpha: 0.3),
                   child: const Icon(Icons.delete_outline_rounded),
                 ),
-                onDismissed: (_) => ref
-                    .read(playlistsProvider.notifier)
-                    .removeTrack(playlist.id, tracks[i].id),
+                onDismissed: (_) =>
+                    _removeWithUndo(context, ref, playlist.id, tracks[i], i),
                 child: TrackTile(
                   track: tracks[i],
                   active: playingId == tracks[i].id,
+                  onLongPress: () => TrackContextSheet.show(
+                    context,
+                    tracks[i],
+                    onRemoveFromPlaylist: () => _removeWithUndo(
+                        context, ref, playlist.id, tracks[i], i),
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'More',
+                    icon: const Icon(Icons.more_vert_rounded,
+                        color: AppColors.textSecondary),
+                    onPressed: () => TrackContextSheet.show(
+                      context,
+                      tracks[i],
+                      onRemoveFromPlaylist: () => _removeWithUndo(
+                          context, ref, playlist.id, tracks[i], i),
+                    ),
+                  ),
                   onTap: () {
                     ref
                         .read(playerControllerProvider.notifier)
@@ -188,4 +206,26 @@ class _PlayAllButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Removes [track] from the playlist and offers to put it back.
+void _removeWithUndo(BuildContext context, WidgetRef ref, String playlistId,
+    Track track, int index) {
+  // Captured now: the undo can fire after this screen is gone.
+  final playlists = ref.read(playlistsProvider.notifier);
+  final messenger = ScaffoldMessenger.of(context);
+  playlists.removeTrack(playlistId, track.id);
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.elevated,
+      content: Text('Removed “${track.title}”',
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      action: SnackBarAction(
+        label: 'Undo',
+        textColor: AppColors.accentBright,
+        onPressed: () => playlists.insertTrack(playlistId, track, index),
+      ),
+    ));
 }

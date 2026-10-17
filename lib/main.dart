@@ -12,6 +12,7 @@ import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/screens/root_scaffold.dart';
 import 'presentation/state/providers.dart';
+import 'presentation/state/most_played_offline.dart';
 import 'presentation/state/player_controller.dart';
 import 'presentation/state/settings_controller.dart';
 
@@ -103,6 +104,7 @@ class _AuroraAppState extends ConsumerState<AuroraApp>
   Widget build(BuildContext context) {
     // Initialize SyncService
     ref.read(syncServiceProvider);
+    ref.read(mostPlayedOfflineSyncProvider);
 
     final mode = ref.watch(themeModeProvider);
     return MaterialApp(

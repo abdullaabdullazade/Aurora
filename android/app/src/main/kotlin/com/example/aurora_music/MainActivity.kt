@@ -1,5 +1,6 @@
 package com.example.aurora_music
 
+import android.app.RecoverableSecurityException
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -30,6 +31,12 @@ class MainActivity : AudioServiceActivity() {
     private val channel = "aurora/ringtone"
     private val mediaChannel = "aurora/media"
 
+    // Song deletion waits for the system confirmation dialog.
+    private val deleteRequestCode = 4711
+    private var pendingDelete: MethodChannel.Result? = null
+    /** Android 10 only: items to delete again once the user allowed it. */
+    private var pendingDeleteUris: List<Uri>? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -48,6 +55,13 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }
                     }.start()
+                    "deleteSongs" -> {
+                        val ids = call.argument<List<Any>>("ids")
+                            ?.mapNotNull { it.toString().toLongOrNull() }
+                            .orEmpty()
+                        if (ids.isEmpty()) result.success(false)
+                        else deleteSongs(ids, result)
+                    }
                     // System Bluetooth settings (scan / pair) — OS owns media routing.
                     "openOutputPicker" -> {
                         result.success(openOutputPicker())
@@ -123,6 +137,79 @@ class MainActivity : AudioServiceActivity() {
             getSystemService(BluetoothManager::class.java)?.adapter
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Deletes MediaStore audio rows and their files. Android 11+ shows the
+     * system "Allow Aurora to delete?" dialog; Android 10 asks per file via
+     * RecoverableSecurityException; older versions need WRITE_EXTERNAL_STORAGE.
+     * Replies true when deleted, false when the user declined.
+     */
+    private fun deleteSongs(ids: List<Long>, result: MethodChannel.Result) {
+        if (pendingDelete != null) {
+            result.error("DELETE_BUSY", "A delete is already waiting for confirmation", null)
+            return
+        }
+        val uris = ids.map {
+            ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, it)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val request = MediaStore.createDeleteRequest(contentResolver, uris)
+                pendingDelete = result
+                startIntentSenderForResult(
+                    request.intentSender, deleteRequestCode, null, 0, 0, 0
+                )
+                return
+            }
+            for (uri in uris) contentResolver.delete(uri, null, null)
+            result.success(true)
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
+                e is RecoverableSecurityException
+            ) {
+                pendingDelete = result
+                pendingDeleteUris = uris
+                startIntentSenderForResult(
+                    e.userAction.actionIntent.intentSender,
+                    deleteRequestCode, null, 0, 0, 0
+                )
+                return
+            }
+            pendingDelete = null
+            result.error("DELETE_DENIED", e.message, null)
+        } catch (e: Exception) {
+            pendingDelete = null
+            pendingDeleteUris = null
+            result.error("DELETE_FAILED", e.message, null)
+        }
+    }
+
+    @Deprecated("Activity result API is not available on FlutterActivity")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != deleteRequestCode) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        val result = pendingDelete
+        val retry = pendingDeleteUris
+        pendingDelete = null
+        pendingDeleteUris = null
+        if (resultCode != RESULT_OK) {
+            result?.success(false)
+            return
+        }
+        if (retry == null) {
+            // Android 11+: the system already deleted the files.
+            result?.success(true)
+            return
+        }
+        try {
+            for (uri in retry) contentResolver.delete(uri, null, null)
+            result?.success(true)
+        } catch (e: Exception) {
+            result?.error("DELETE_FAILED", e.message, null)
         }
     }
 

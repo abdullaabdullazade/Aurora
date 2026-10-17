@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/track.dart';
+import '../../state/device_music_controller.dart';
 import '../../state/download_controller.dart';
 import '../../state/player_controller.dart';
 import '../../widgets/artwork.dart';
@@ -15,22 +16,35 @@ import '../album/album_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
 import '../player/sleep_timer_sheet.dart';
 import 'add_to_playlist_sheet.dart';
+import 'library_screen.dart' show confirmDialog;
 
 /// Long-press menu for a track: artist / album / playlist / share.
 class TrackContextSheet extends ConsumerWidget {
   final Track track;
   final bool showSleepTimer;
-  const TrackContextSheet(
-      {super.key, required this.track, this.showSleepTimer = false});
+
+  /// Set when opened from a playlist: shows "Remove from this playlist".
+  final VoidCallback? onRemoveFromPlaylist;
+
+  const TrackContextSheet({
+    super.key,
+    required this.track,
+    this.showSleepTimer = false,
+    this.onRemoveFromPlaylist,
+  });
 
   static Future<void> show(BuildContext context, Track track,
-          {bool showSleepTimer = false}) =>
+          {bool showSleepTimer = false,
+          VoidCallback? onRemoveFromPlaylist}) =>
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
         builder: (_) => TrackContextSheet(
-            track: track, showSleepTimer: showSleepTimer),
+          track: track,
+          showSleepTimer: showSleepTimer,
+          onRemoveFromPlaylist: onRemoveFromPlaylist,
+        ),
       );
 
   Future<void> _share() async {
@@ -54,6 +68,35 @@ class TrackContextSheet extends ConsumerWidget {
     Navigator.pop(context);
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  /// A song from the phone's own library (MediaStore id), not a download.
+  bool get _isDeviceSong =>
+      track.localPath != null &&
+      track.id.length < 11 &&
+      int.tryParse(track.id) != null;
+
+  Future<void> _deleteFromDevice(BuildContext context) async {
+    final ok = await confirmDialog(context,
+        title: 'Delete from device?',
+        message: '“${track.title}” will be permanently deleted from this '
+            'phone and removed from your playlists and Liked Songs.');
+    if (!ok || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    Navigator.pop(context);
+    String message;
+    try {
+      final deleted = await deleteDeviceSongs(container, [track]);
+      message = deleted ? 'Deleted “${track.title}”' : 'Nothing was deleted';
+    } on PlatformException catch (e) {
+      message = 'Could not delete: ${e.message ?? e.code}';
+    }
+    messenger.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.elevated,
+      content: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
+    ));
   }
 
   Future<void> _setRingtone(BuildContext context, RingtoneType type) async {
@@ -180,6 +223,15 @@ class TrackContextSheet extends ConsumerWidget {
                     ));
                 },
               ),
+            if (onRemoveFromPlaylist != null)
+              _Item(
+                icon: Icons.playlist_remove_rounded,
+                label: 'Remove from this playlist',
+                onTap: () {
+                  Navigator.pop(context);
+                  onRemoveFromPlaylist!();
+                },
+              ),
             _Item(
               icon: Icons.playlist_add_rounded,
               label: 'Add to playlist',
@@ -225,6 +277,15 @@ class TrackContextSheet extends ConsumerWidget {
                 onTap: () => _setRingtone(context, RingtoneType.alarm),
               ),
             ],
+            if (_isDeviceSong) ...[
+              const Divider(height: 1, color: AppColors.glassStroke),
+              _Item(
+                icon: Icons.delete_forever_rounded,
+                label: 'Delete from device',
+                danger: true,
+                onTap: () => _deleteFromDevice(context),
+              ),
+            ],
             const SizedBox(height: Sp.md),
           ],
         ),
@@ -238,6 +299,7 @@ class _Item extends StatelessWidget {
   final String label;
   final String? subtitle;
   final bool subtitleAccent;
+  final bool danger;
   final VoidCallback onTap;
   const _Item({
     required this.icon,
@@ -245,13 +307,18 @@ class _Item extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.subtitleAccent = false,
+    this.danger = false,
   });
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return ListTile(
-      leading: Icon(icon, color: AppColors.textPrimary),
-      title: Text(label, style: text.titleMedium),
+      leading: Icon(icon,
+          color: danger ? Colors.red.shade400 : AppColors.textPrimary),
+      title: Text(label,
+          style: danger
+              ? text.titleMedium?.copyWith(color: Colors.red.shade400)
+              : text.titleMedium),
       subtitle: subtitle != null
           ? Text(subtitle!,
               style: text.bodyMedium?.copyWith(
