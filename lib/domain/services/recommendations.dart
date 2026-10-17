@@ -70,3 +70,49 @@ List<Track> blendRecommendations(
   }
   return out;
 }
+
+/// Which country's chart fits what the listener plays, judged by the
+/// alphabet of their most played titles/artists: Azerbaijani "ə",
+/// Turkish "ı/ğ/ş/İ" (or "ö/ü/ç" without German "ä/ß"), Cyrillic. Null means no clear signal (use Global).
+/// A country needs at least two tracks and a quarter of the sample.
+String? guessChartCountry(List<Track> mostPlayed) {
+  final votes = <String, int>{};
+  for (final t in mostPlayed) {
+    final text = '${t.title} ${t.artist}';
+    final String? country;
+    if (text.contains(RegExp(r'[əƏ]'))) {
+      country = 'Azerbaijan';
+    } else if (text.contains(RegExp(r'[ıİğĞşŞ]')) ||
+        // ö/ü/ç are Turkish too, but German shares ö/ü; ä/ß mark German.
+        (text.contains(RegExp(r'[öÖüÜçÇ]')) &&
+            !text.contains(RegExp(r'[äÄß]')))) {
+      country = 'Turkey';
+    } else if (text.contains(RegExp(r'[\u0400-\u04FF]'))) {
+      country = 'Russia';
+    } else {
+      country = null;
+    }
+    if (country != null) votes[country] = (votes[country] ?? 0) + 1;
+  }
+  if (votes.isEmpty) return null;
+  final best = votes.entries.reduce((a, b) => a.value >= b.value ? a : b);
+  if (best.value < 2 || best.value * 4 < mostPlayed.length) return null;
+  return best.key;
+}
+
+/// "S.O.S and 2 more" (YouTube's label for multi-artist uploads) -> "S.O.S".
+String cleanArtistName(String artist) =>
+    artist.replaceAll(RegExp(r'\s+and\s+\d+\s+more$'), '').trim();
+
+/// Distinct artists in order of first appearance, by [artistKey].
+List<String> distinctArtists(Iterable<Track> tracks, {int limit = 6}) {
+  final out = <String>[];
+  final seen = <String>{};
+  for (final t in tracks) {
+    if (out.length >= limit) break;
+    final name = cleanArtistName(t.artist);
+    if (name.isEmpty || name == 'Unknown') continue;
+    if (seen.add(artistKey(name))) out.add(name);
+  }
+  return out;
+}
