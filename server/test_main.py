@@ -270,5 +270,52 @@ class ProgressiveStreamTest(unittest.TestCase):
         self.assertEqual(response.content, b"56789")
 
 
+
+class SecurityTest(unittest.TestCase):
+    def test_playlist_rejects_non_youtube_urls(self) -> None:
+        client = TestClient(main.app)
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:8000/sync",
+            "file:///etc/passwd",
+            "https://youtube.com.evil.example/playlist?list=x",
+        ):
+            response = client.get("/playlist", params={"url": url})
+            self.assertEqual(response.status_code, 400, url)
+
+    def test_cookie_copy_is_removed_after_use(self) -> None:
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        master = os.path.join(work.name, "cookies.txt")
+        with open(master, "w", encoding="utf-8") as fh:
+            fh.write("# Netscape HTTP Cookie File\n")
+        original = main._cookiefile
+        main._cookiefile = lambda: master
+        self.addCleanup(setattr, main, "_cookiefile", original)
+
+        with main._ydl({}) as ydl:
+            copy = ydl.params["cookiefile"]
+            self.assertNotEqual(copy, master)
+            self.assertTrue(os.path.exists(copy))
+        self.assertFalse(os.path.exists(copy))
+        self.assertTrue(os.path.exists(master))
+
+    def test_secret_key_is_required_when_configured(self) -> None:
+        original = os.environ.get("AURORA_SECRET_KEY")
+        os.environ["AURORA_SECRET_KEY"] = "s3cret"
+        self.addCleanup(
+            lambda: os.environ.pop("AURORA_SECRET_KEY", None)
+            if original is None
+            else os.environ.__setitem__("AURORA_SECRET_KEY", original)
+        )
+        client = TestClient(main.app)
+        self.assertEqual(client.get("/suggest?q=a").status_code, 401)
+        self.assertEqual(
+            client.get("/suggest?q=a", headers={"x-api-key": "wrong"}).status_code,
+            401,
+        )
+        self.assertEqual(client.get("/health").status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()
