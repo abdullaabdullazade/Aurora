@@ -422,6 +422,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
           : null;
 
   List<MediaItem> get currentQueue => queue.value;
+
+  String? _mediaIdAt(int? i) {
+    final items = sequence;
+    if (i == null || i < 0 || i >= items.length) return null;
+    final tag = items[i].tag;
+    return tag is MediaItem ? tag.id : null;
+  }
   StreamSubscription<TrackInfo>? _trackInfoSubscription;
 
   Future<void> _initPlayer(InitRequest initRequest) =>
@@ -437,7 +444,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
               _broadcastState();
               return event;
             })
-            .map((event) => TrackInfo(event.currentIndex, event.duration))
+            // The item id is part of the key: dropping played items from the
+            // front of the sequence moves the next song onto the index the
+            // previous one had, and with equal durations (index, duration)
+            // alone looked unchanged, leaving the old title and cover on the
+            // notification / lock screen.
+            .map((event) => TrackInfo(event.currentIndex, event.duration,
+                _mediaIdAt(event.currentIndex)))
             .distinct()
             .debounceTime(const Duration(milliseconds: 100))
             .map((track) {
@@ -447,7 +460,8 @@ class _PlayerAudioHandler extends BaseAudioHandler
               if (currentMediaItem != null) {
                 if (track.duration == null &&
                     currentMediaItem.duration != null) {
-                  return TrackInfo(track.index, currentMediaItem.duration);
+                  return TrackInfo(
+                      track.index, currentMediaItem.duration, track.id);
                 }
               }
               return track;
@@ -1004,17 +1018,23 @@ class TrackInfo {
   final int? index;
   final Duration? duration;
 
-  const TrackInfo(this.index, this.duration);
+  /// MediaItem id of the item at [index].
+  final String? id;
+
+  const TrackInfo(this.index, this.duration, [this.id]);
 
   @override
   bool operator ==(Object other) =>
-      other is TrackInfo && index == other.index && duration == other.duration;
+      other is TrackInfo &&
+      index == other.index &&
+      duration == other.duration &&
+      id == other.id;
 
   @override
-  int get hashCode => Object.hash(index, duration);
+  int get hashCode => Object.hash(index, duration, id);
 
   @override
-  String toString() => '($index, $duration)';
+  String toString() => '($index, $duration, $id)';
 }
 
 /// Backwards compatible extensions on rxdart's ValueStream
