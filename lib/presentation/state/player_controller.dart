@@ -937,6 +937,9 @@ class PlayerController extends Notifier<PlayerState> {
       // Lists built from stats, search or recents carry no path even when
       // the track is downloaded; play the offline copy when there is one.
       final saved = ref.read(localStoreProvider).downloadPath(track.id);
+      if (saved != null && saved.startsWith('content://')) {
+        return Uri.parse(saved); // Music/Aurora download
+      }
       if (saved != null && await File(saved).exists()) return Uri.file(saved);
     }
     if (track.localPath != null) {

@@ -75,6 +75,9 @@ Future<List<Track>> _queryOnce() {
           await _mediaCh.invokeMethod<List<dynamic>>('querySongs') ?? const [];
       return res
           .map((e) => _toTrack(Map<dynamic, dynamic>.from(e as Map)))
+          // Aurora's own downloads (Music/Aurora) are listed under
+          // Downloaded; showing them here too would list them twice.
+          .where((t) => !(t.localPath?.contains('/Music/Aurora/') ?? false))
           .toList(growable: false);
     } finally {
       _inflight = null;

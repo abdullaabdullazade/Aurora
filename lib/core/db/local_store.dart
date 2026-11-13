@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/recent_playlist.dart';
 import '../../domain/entities/track.dart';
+import '../downloads/music_folder.dart';
 
 /// Last queue, track index, and scrub position for resume-on-launch.
 @immutable
@@ -363,9 +364,19 @@ class LocalStore {
   /// audio files are deleted too: once the index is gone nothing references
   /// them, and the next account restores its own downloads on sign-in.
   Future<void> clearAccountData() async {
+    final shared = <String>[];
     for (final track in downloads()) {
-      await _deleteOwnFile(track.localPath);
+      final path = track.localPath;
+      if (path != null && isSharedMediaPath(path)) {
+        shared.add(path);
+      } else {
+        await _deleteOwnFile(path);
+      }
     }
+    // Shared Music/Aurora files: this install's go silently. A previous
+    // install's would need Android's confirmation, so those stay in the
+    // folder (and are linked again as downloads on the next start).
+    await deleteOwnMedia(shared);
     await Future.wait([
       clearPlaybackSession(),
       _playlists.clear(),
@@ -407,6 +418,16 @@ class LocalStore {
       await _recents.put(_downloadTombstonesKey, tombstones);
     }
   }
+
+  /// Points an existing download at a moved file, keeping its other fields.
+  Future<void> relinkDownload(String id, String path) async {
+    final raw = _downloads.get(id);
+    if (raw is! Map) return;
+    await _downloads.put(id, {...Map<String, dynamic>.from(raw), 'localPath': path});
+  }
+
+  /// Whether the user deleted this download (here or on another device).
+  bool isDownloadDeleted(String id) => _downloadTombstones().containsKey(id);
 
   /// File of a finished download, if this track has one.
   String? downloadPath(String id) {

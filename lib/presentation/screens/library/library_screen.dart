@@ -13,6 +13,8 @@ import '../../widgets/glass.dart';
 import '../../widgets/track_tile.dart';
 import '../../state/favorites_controller.dart';
 import '../../state/download_controller.dart';
+import '../../../core/downloads/music_folder.dart';
+import '../../state/device_music_controller.dart';
 import 'device_music_tab.dart';
 import 'favorites_screen.dart';
 import 'most_played_screen.dart';
@@ -557,6 +559,18 @@ class _DownloadedTab extends ConsumerWidget {
                 Text('No downloads yet', style: text.titleMedium),
                 const SizedBox(height: Sp.xs),
                 Text('Downloaded tracks play offline', style: text.bodyMedium),
+                const SizedBox(height: Sp.lg),
+                // After a reinstall the old files are still in Music/Aurora,
+                // but Android only shows them once audio access is granted.
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await requestAudioPermission();
+                    ref.invalidate(audioPermissionProvider);
+                    await ref.read(musicFolderLinkProvider.notifier).run();
+                  },
+                  icon: const Icon(Icons.manage_search_rounded),
+                  label: const Text('Find downloads on this phone'),
+                ),
               ],
             ),
           );
@@ -597,11 +611,17 @@ class _DownloadedTab extends ConsumerWidget {
                         color: AppColors.textSecondary),
                     onPressed: () async {
                       final t = tracks[i];
-                      final ok = await confirmDialog(context,
-                          title: 'Delete download?',
-                          message: '“${t.title}” will be removed from your '
-                              'device.');
-                      if (!ok) return;
+                      final path = t.localPath ?? '';
+                      // One confirmation only: where Android shows its own
+                      // delete dialog, the app does not ask first.
+                      if (!await systemConfirmsDelete(path)) {
+                        if (!context.mounted) return;
+                        final ok = await confirmDialog(context,
+                            title: 'Delete download?',
+                            message: '“${t.title}” will be removed from your '
+                                'device.');
+                        if (!ok) return;
+                      }
                       await ref
                           .read(downloadControllerProvider.notifier)
                           .deleteDownload(t);
