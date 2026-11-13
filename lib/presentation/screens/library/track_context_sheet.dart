@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../domain/entities/track.dart';
+import '../../../core/downloads/music_folder.dart';
 import '../../state/device_music_controller.dart';
 import '../../state/download_controller.dart';
 import '../../state/player_controller.dart';
@@ -77,11 +78,17 @@ class TrackContextSheet extends ConsumerWidget {
       int.tryParse(track.id) != null;
 
   Future<void> _deleteFromDevice(BuildContext context) async {
-    final ok = await confirmDialog(context,
-        title: 'Delete from device?',
-        message: '“${track.title}” will be permanently deleted from this '
-            'phone and removed from your playlists and Liked Songs.');
-    if (!ok || !context.mounted) return;
+    // Android 11+ shows its own "Allow Aurora to delete?" dialog; asking
+    // here as well meant two confirmations for one delete.
+    if (await androidSdk() < 30) {
+      if (!context.mounted) return;
+      final ok = await confirmDialog(context,
+          title: 'Delete from device?',
+          message: '“${track.title}” will be permanently deleted from this '
+              'phone and removed from your playlists and Liked Songs.');
+      if (!ok) return;
+    }
+    if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final container = ProviderScope.containerOf(context, listen: false);
     Navigator.pop(context);

@@ -55,6 +55,58 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }
                     }.start()
+                    // Downloads live in shared Music/Aurora so they survive
+                    // an uninstall; see DownloadController.
+                    "saveToMusic" -> {
+                        val path = call.argument<String>("path")
+                        val name = call.argument<String>("name")
+                        if (path.isNullOrBlank() || name.isNullOrBlank()) {
+                            result.success(null)
+                        } else {
+                            Thread {
+                                val saved = try {
+                                    saveToMusic(path, name)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                                runOnUiThread { result.success(saved) }
+                            }.start()
+                        }
+                    }
+                    "sdkInt" -> result.success(Build.VERSION.SDK_INT)
+                    "mediaExists" -> {
+                        val raw = call.argument<String>("uri").orEmpty()
+                        result.success(
+                            try {
+                                if (raw.startsWith("content://")) {
+                                    contentResolver.query(
+                                        Uri.parse(raw),
+                                        arrayOf(MediaStore.Audio.Media._ID),
+                                        null, null, null
+                                    )?.use { it.count > 0 } ?: false
+                                } else {
+                                    java.io.File(raw).exists()
+                                }
+                            } catch (_: Exception) {
+                                true // unknown: let the delete path decide
+                            }
+                        )
+                    }
+                    "listAuroraMusic" -> Thread {
+                        val rows = try {
+                            listAuroraMusic()
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        runOnUiThread { result.success(rows) }
+                    }.start()
+                    "deleteOwnMedia" -> {
+                        val uris = call.argument<List<String>>("uris").orEmpty()
+                        Thread {
+                            val deleted = deleteOwnMedia(uris)
+                            runOnUiThread { result.success(deleted) }
+                        }.start()
+                    }
                     "deleteSongs" -> {
                         val ids = call.argument<List<Any>>("ids")
                             ?.mapNotNull { it.toString().toLongOrNull() }
@@ -584,6 +636,131 @@ class MainActivity : AudioServiceActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private val auroraMusicDir = "Music/Aurora"
+
+    /**
+     * Copies a finished download into shared Music/Aurora and returns where
+     * it can be played from (a content:// URI on Android 10+, a file path on
+     * older versions), or null when shared storage is not writable (Android
+     * 9 and older without WRITE_EXTERNAL_STORAGE).
+     */
+    private fun saveToMusic(path: String, name: String): String? {
+        val source = java.io.File(path)
+        if (!source.exists()) return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, name)
+                put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, "$auroraMusicDir/")
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            val collection = MediaStore.Audio.Media.getContentUri(
+                MediaStore.VOLUME_EXTERNAL_PRIMARY
+            )
+            val uri = contentResolver.insert(collection, values) ?: return null
+            try {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    source.inputStream().use { it.copyTo(out) }
+                } ?: throw java.io.IOException("no output stream")
+                values.clear()
+                values.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+                return uri.toString()
+            } catch (e: Exception) {
+                contentResolver.delete(uri, null, null)
+                return null
+            }
+        }
+        @Suppress("DEPRECATION")
+        val dir = java.io.File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_MUSIC
+            ),
+            "Aurora"
+        )
+        if (!dir.exists() && !dir.mkdirs()) return null
+        val target = java.io.File(dir, name)
+        source.copyTo(target, overwrite = true)
+        android.media.MediaScannerConnection.scanFile(
+            this, arrayOf(target.absolutePath), arrayOf("audio/mp4"), null
+        )
+        return target.absolutePath
+    }
+
+    /** Files in Music/Aurora (downloads, including a previous install's). */
+    private fun listAuroraMusic(): List<HashMap<String, Any?>> {
+        val out = ArrayList<HashMap<String, Any?>>()
+        val proj = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATA,
+        )
+        val (sel, args) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?" to
+                arrayOf("$auroraMusicDir/%")
+        } else {
+            "${MediaStore.Audio.Media.DATA} LIKE ?" to arrayOf("%/$auroraMusicDir/%")
+        }
+        contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj, sel, args, null
+        )?.use { c ->
+            val idI = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val nameI = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val durI = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dataI = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            while (c.moveToNext()) {
+                val id = c.getLong(idI)
+                val uri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id
+                )
+                out.add(hashMapOf(
+                    "mediaId" to id.toString(),
+                    "name" to (c.getString(nameI) ?: ""),
+                    "duration" to c.getLong(durI),
+                    "uri" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                        uri.toString() else (c.getString(dataI) ?: uri.toString()),
+                ))
+            }
+        }
+        return out
+    }
+
+    /**
+     * Deletes media this install created, without any prompt. Files from a
+     * previous install belong to it and raise SecurityException; those are
+     * skipped (the caller can ask through deleteSongs). Returns how many went.
+     */
+    private fun deleteOwnMedia(uris: List<String>): Int {
+        var deleted = 0
+        for (raw in uris) {
+            try {
+                if (raw.startsWith("content://")) {
+                    val uri = Uri.parse(raw)
+                    // Already gone (deleted in a file manager): nothing to do.
+                    val present = contentResolver.query(
+                        uri, arrayOf(MediaStore.Audio.Media._ID), null, null, null
+                    )?.use { it.count > 0 } ?: false
+                    if (!present || contentResolver.delete(uri, null, null) > 0) deleted++
+                } else {
+                    val f = java.io.File(raw)
+                    if (!f.exists()) {
+                        deleted++
+                    } else if (f.delete()) {
+                        contentResolver.delete(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            "${MediaStore.Audio.Media.DATA}=?", arrayOf(raw)
+                        )
+                        deleted++
+                    }
+                }
+            } catch (_: SecurityException) {
+            } catch (_: Exception) {
+            }
+        }
+        return deleted
     }
 
     private fun queryAudio(): List<HashMap<String, Any?>> {

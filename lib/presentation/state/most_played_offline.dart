@@ -74,7 +74,9 @@ Future<void> _reconcile(Ref ref) async {
     // Pulling the file from under the player would cut the song off; the
     // next pass removes it.
     if (t.id == playingId) continue;
-    await downloader.deleteDownload(t);
+    // Never prompts from the background; a file it cannot remove silently
+    // (left by a previous install) simply stays downloaded.
+    await downloader.deleteDownload(t, interactive: false);
   }
   if (wanted.isEmpty) return;
 
