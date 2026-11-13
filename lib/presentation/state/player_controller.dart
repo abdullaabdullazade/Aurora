@@ -773,11 +773,23 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   void _onNativeIndexChanged(int newIdx) {
-    if (newIdx < 0 || newIdx >= _windowQueueIndices.length) return;
     if (newIdx == _concatBaseIndex) return;
-    final queueIdx = _windowQueueIndices[newIdx];
     _concatBaseIndex = newIdx;
-    if (queueIdx == state.index) return;
+    // Identify the song by the MediaItem the native player is on, not by
+    // position: _prefetchAfterAdvance drops played items from the front of
+    // the window, which shifts every native index down by one *before*
+    // _windowQueueIndices is updated. Mapping that event by position moved
+    // the UI back to the previous song while the new one kept playing — the
+    // old cover and title stayed up.
+    final sequence = _player.sequence;
+    if (sequence == null || newIdx < 0 || newIdx >= sequence.length) return;
+    final tag = sequence[newIdx].tag;
+    final id = tag is MediaItem ? tag.id : null;
+    if (id == null || id == state.current?.id) return;
+    // A queue can hold the same song twice: prefer the next occurrence.
+    var queueIdx = state.queue.indexWhere((t) => t.id == id, state.index);
+    if (queueIdx < 0) queueIdx = state.queue.indexWhere((t) => t.id == id);
+    if (queueIdx < 0 || queueIdx == state.index) return;
     _cancelFade();
     unawaited(_player.setVolume(_baseVolume));
     state = state.copyWith(
